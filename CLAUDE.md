@@ -21,8 +21,9 @@ No tests or linter configured.
 The server is a single-process Node.js app (ESM, strict TypeScript):
 
 - `src/index.ts` — Creates `McpServer`, registers all five tools with zod schemas, connects stdio transport
-- `src/tools.ts` — Tool implementations: writes Swift code to a tempfile, shells out to `occtkit run`, reads back results
+- `src/tools.ts` — Tool implementations: writes Swift code to a tempfile, sends it to a long-lived `occtkit run --serve` child by default, falls back to one-shot `occtkit run <path>` if serve mode is unavailable
 - `src/occtkit.ts` — Resolves how to invoke `occtkit`: prefers PATH, falls back to `swift run -c release occtkit` inside the sibling OCCTSwiftScripts repo, throws a clear setup error if neither is available. Result is memoised
+- `src/occtkit-serve.ts` — Singleton long-lived `occtkit run --serve` child. JSONL request/response over stdin/stdout (one envelope per request, post-`gsdali/OCCTSwiftScripts#5`). Per-request timeout kills the child and respawns on next call. If a returned envelope lacks the `ok` field (pre-fix occtkit), serve mode is permanently disabled for the session and callers fall back to one-shot
 - `src/paths.ts` — Output dir / manifest path resolution (iCloud-vs-local) and per-call tempfile name generation
 - `src/api-reference.ts` — **Generated** OCCTSwift API reference strings keyed by category. Do not edit by hand — it is rewritten by `scripts/generate-api-reference.mjs` (runs as `npm run prebuild`). The generator parses `~/Projects/OCCTSwift/Sources/OCCTSwift/*.swift` directly, extracts `public func` declarations, and groups them via the editorial `CATEGORIES` array at the top of the script. New OCCTSwift methods that don't match any category are surfaced in the generator's stderr "UNMATCHED" report — extend `CATEGORIES` (add a `markRx` or `nameRx` rule) when something important is missing.
 
@@ -30,14 +31,15 @@ The server is a single-process Node.js app (ESM, strict TypeScript):
 
 `execute_script` is the core tool. It:
 1. Writes the LLM's Swift code to a per-call tempfile under `os.tmpdir()` and stashes the source for `get_script`
-2. Resolves an `occtkit` invocation via `src/occtkit.ts` and runs `occtkit run <tempfile>` (2min timeout — generous because the cold first build is slow; incremental builds are ~1–2s)
-3. Filters noisy OCCT bridge nullability warnings from build output (`filterBuildOutput`); the same filter runs on the failure path so compiler diagnostics still reach the LLM under the `Script failed.` prefix
-4. Reads `manifest.json` from the output directory and returns it with build output
-5. Removes the tempfile in a `finally` block
+2. **Serve path (default):** sends `{"args": ["<tempfile>"]}` over stdin to the singleton `occtkit run --serve` child managed by `src/occtkit-serve.ts`, awaits one JSONL envelope `{ ok, exit, stdout, stderr, error? }`. Cold start of the child is 60+s on first call; subsequent calls amortise to ~1–2s incremental.
+3. **One-shot fallback:** if serve mode threw (timeout, child crash, pre-fix occtkit detected), runs `occtkit run <tempfile>` as a fresh subprocess. Triggers automatically; `OCCTMCP_OCCTKIT_NO_SERVE=1` forces this path always.
+4. Filters noisy OCCT bridge nullability warnings from build output (`filterBuildOutput`); the same filter runs on both paths so compiler diagnostics still reach the LLM under the `Script failed.` prefix
+5. Reads `manifest.json` from the output directory and returns it with build output
+6. Removes the tempfile in a `finally` block
 
 Writing `manifest.json` is the side effect that matters: `OCCTSwiftViewport`'s `ScriptWatcher` watches that file, so emitting it is what triggers the live 3D reload.
 
-`occtkit run --serve` (long-lived JSONL request loop) would let us drop the per-call build-cache check overhead, but adoption is deferred — see `gsdali/OCCTSwiftScripts#5` for the upstream framing gap that blocks safe client integration.
+The 2 min timeout is per-request in both paths. On serve-mode timeout the child is `SIGTERM`'d so any pending requests reject and the next `execute_script` respawns it.
 
 ### Output Directory Resolution
 
@@ -45,9 +47,10 @@ Writing `manifest.json` is the side effect that matters: `OCCTSwiftViewport`'s `
 
 ## External Dependencies
 
-- **OCCTSwiftScripts** ≥ v0.5.0-rc.1 — provides the `occtkit` CLI used by every `execute_script` call. Two install options, either works:
+- **OCCTSwiftScripts** ≥ post-`fd2a1cf` (the `--serve` framing fix from `gsdali/OCCTSwiftScripts#5`) — provides the `occtkit` CLI used by every `execute_script` call. Two install options, either works:
   - `make install` from the OCCTSwiftScripts repo puts `occtkit` on `$PATH` (preferred — fastest invocation, no sibling-repo path dependency).
   - Clone OCCTSwiftScripts to `~/Projects/OCCTSwiftScripts` so `swift run -c release occtkit` works as the fallback (slower per-call than the binary, but no install step).
+  - Older OCCTSwiftScripts (without #5's framing) still works in one-shot fallback mode, just without the serve-mode amortisation. The serve client auto-detects the missing `ok` field on the first envelope and disables serve for the session.
 - **OCCTSwift** — Swift wrapper around OpenCASCADE; transitive dep of OCCTSwiftScripts. Required at `~/Projects/OCCTSwift/` only when regenerating `src/api-reference.ts` via `scripts/generate-api-reference.mjs` (runs as `npm run prebuild`).
 - **OCCTSwiftViewport** — Metal viewport that watches the output directory via `ScriptWatcher` and auto-reloads. Optional but expected if you want the live preview.
 
