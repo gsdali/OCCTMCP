@@ -1,12 +1,15 @@
-import { homedir } from "os";
+import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { existsSync } from "fs";
+import { randomUUID } from "crypto";
 
-/** Root of the OCCTSwiftScripts project. */
+/** Root of the OCCTSwiftScripts project — used as a fallback when occtkit is not on $PATH. */
 export const SCRIPTS_PROJECT = join(homedir(), "Projects", "OCCTSwiftScripts");
 
-/** The script source file that gets rewritten on each execute_script call. */
-export const MAIN_SWIFT = join(SCRIPTS_PROJECT, "Sources", "Script", "main.swift");
+/** Path for a fresh per-call script tempfile. */
+export function tempScriptPath(): string {
+  return join(tmpdir(), `occtmcp-script-${randomUUID()}.swift`);
+}
 
 /** Output directory — prefers iCloud Drive, falls back to local. */
 export function outputDir(): string {

@@ -1514,6 +1514,12 @@ TopologyGraph.solidCompSolidCount(_ solidIndex: Int) -> Int
 ## History
 TopologyGraph.clearHistory()
 
+## History Record Readback (v0.141, #72 Phase 0)
+TopologyGraph.historyRecord(at index: Int) -> HistoryRecord?
+TopologyGraph.findOriginal(of derived: NodeRef) -> NodeRef
+TopologyGraph.findDerived(of original: NodeRef) -> [NodeRef]
+TopologyGraph.recordHistory(operationName: String, original: NodeRef, replacements: [NodeRef])
+
 ## SameDomain
 TopologyGraph.sameDomainFaces(of faceIndex: Int) -> [Int]
 
