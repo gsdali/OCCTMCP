@@ -1,12 +1,23 @@
 import { execFile } from "child_process";
-import { readFile, readdir, writeFile } from "fs/promises";
+import { readFile, readdir, writeFile, unlink } from "fs/promises";
 import { existsSync } from "fs";
 import { join } from "path";
 import { promisify } from "util";
-import { SCRIPTS_PROJECT, MAIN_SWIFT, outputDir, manifestPath } from "./paths.js";
+import { outputDir, manifestPath, tempScriptPath } from "./paths.js";
 import { API_REFERENCE } from "./api-reference.js";
+import { resolveOcctkit } from "./occtkit.js";
+import {
+  getServeProcess,
+  serveDisabled,
+  type ServeEnvelope,
+} from "./occtkit-serve.js";
 
 const execFileAsync = promisify(execFile);
+
+const TOOL_TIMEOUT_MS = 120_000;
+
+/** Source of the most recent script run in this MCP session, for `get_script`. */
+let lastScriptCode: string | undefined;
 
 /**
  * Filter out noisy compiler warnings (OCCT bridge nullability warnings, etc.)
@@ -40,21 +51,82 @@ function filterBuildOutput(raw: string): string {
 
 // ── execute_script ──────────────────────────────────────────────────────────
 
+type ToolResult = { content: Array<{ type: "text"; text: string }> };
+
 export async function executeScript(
   code: string,
   description?: string
-): Promise<{ content: Array<{ type: "text"; text: string }> }> {
-  // 1. Write the script
-  await writeFile(MAIN_SWIFT, code, "utf-8");
+): Promise<ToolResult> {
+  const scriptPath = tempScriptPath();
+  await writeFile(scriptPath, code, "utf-8");
+  lastScriptCode = code;
 
-  // 2. Build & run
+  try {
+    if (!serveDisabled()) {
+      const serve = getServeProcess();
+      if (serve.isSupported()) {
+        try {
+          const env = await serve.send(scriptPath, TOOL_TIMEOUT_MS);
+          return await formatServeResult(env, description);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          process.stderr.write(
+            `[occtmcp] serve mode failed (${msg}); falling back to one-shot occtkit run\n`
+          );
+        }
+      }
+    }
+    return await executeOneShot(scriptPath, description);
+  } finally {
+    await unlink(scriptPath).catch(() => {});
+  }
+}
+
+async function formatServeResult(
+  env: ServeEnvelope,
+  description?: string
+): Promise<ToolResult> {
+  const combined = [env.stdout, env.stderr].filter(Boolean).join("\n");
+  const filtered = filterBuildOutput(combined);
+  if (env.ok) {
+    let manifest = "";
+    const mp = manifestPath();
+    if (existsSync(mp)) {
+      const raw = await readFile(mp, "utf-8");
+      manifest = `\n\nManifest:\n${raw}`;
+    }
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `Script executed successfully.${description ? ` (${description})` : ""}\n\nOutput:\n${filtered || "(no output)"}${manifest}`,
+        },
+      ],
+    };
+  }
+  const errorTail = env.error ? (filtered ? `\n\n${env.error}` : env.error) : "";
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: `Script failed.\n\n${filtered}${errorTail}`.trim() || "Unknown error",
+      },
+    ],
+  };
+}
+
+async function executeOneShot(
+  scriptPath: string,
+  description?: string
+): Promise<ToolResult> {
+  const oc = await resolveOcctkit();
   try {
     const { stdout, stderr } = await execFileAsync(
-      "swift",
-      ["run", "Script"],
+      oc.command,
+      [...oc.baseArgs, scriptPath],
       {
-        cwd: SCRIPTS_PROJECT,
-        timeout: 120_000, // 2 min for first build, incremental is ~1-2s
+        cwd: oc.cwd,
+        timeout: TOOL_TIMEOUT_MS, // 2 min for first build; incremental ~1–2s
         maxBuffer: 10 * 1024 * 1024,
       }
     );
@@ -63,7 +135,6 @@ export async function executeScript(
     const filteredStderr = filterBuildOutput(stderr || "");
     const output = [filteredStdout, filteredStderr].filter(Boolean).join("\n").trim();
 
-    // 3. Read manifest if it exists
     let manifest = "";
     const mp = manifestPath();
     if (existsSync(mp)) {
@@ -81,13 +152,11 @@ export async function executeScript(
     };
   } catch (err: unknown) {
     const error = err as { stdout?: string; stderr?: string; message?: string };
-    // For errors, keep more output to help diagnose, but still filter noise
     const parts = [
       filterBuildOutput(error.stdout || ""),
       filterBuildOutput(error.stderr || ""),
     ].filter(Boolean);
 
-    // If filtering removed everything useful, fall back to the raw message
     const output = parts.join("\n").trim() || error.message || "Unknown error";
 
     return {
@@ -135,15 +204,18 @@ export async function getScene(): Promise<{
 export async function getScript(): Promise<{
   content: Array<{ type: "text"; text: string }>;
 }> {
-  if (!existsSync(MAIN_SWIFT)) {
+  if (lastScriptCode === undefined) {
     return {
-      content: [{ type: "text" as const, text: "No script found at " + MAIN_SWIFT }],
+      content: [
+        {
+          type: "text" as const,
+          text: "No script has been executed in this session. Call execute_script first.",
+        },
+      ],
     };
   }
-
-  const source = await readFile(MAIN_SWIFT, "utf-8");
   return {
-    content: [{ type: "text" as const, text: source }],
+    content: [{ type: "text" as const, text: lastScriptCode }],
   };
 }
 
@@ -167,7 +239,8 @@ export async function exportModel(): Promise<{
       f.endsWith(".step") ||
       f.endsWith(".brep") ||
       f.endsWith(".stl") ||
-      f.endsWith(".obj")
+      f.endsWith(".obj") ||
+      f.endsWith(".json")
   );
 
   if (modelFiles.length === 0) {

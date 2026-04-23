@@ -1,0 +1,52 @@
+import { execFile } from "child_process";
+import { existsSync } from "fs";
+import { join } from "path";
+import { promisify } from "util";
+import { SCRIPTS_PROJECT } from "./paths.js";
+
+const execFileAsync = promisify(execFile);
+
+export interface OcctkitInvocation {
+  /** The executable to spawn. */
+  command: string;
+  /** Args prepended before the script path. */
+  baseArgs: string[];
+  /** Working directory for the spawn (only set when using the sibling-repo fallback). */
+  cwd?: string;
+}
+
+let cache: OcctkitInvocation | undefined;
+
+async function onPath(): Promise<boolean> {
+  try {
+    await execFileAsync("which", ["occtkit"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function resolveOcctkit(): Promise<OcctkitInvocation> {
+  if (cache) return cache;
+
+  if (await onPath()) {
+    cache = { command: "occtkit", baseArgs: ["run"] };
+    return cache;
+  }
+
+  if (existsSync(join(SCRIPTS_PROJECT, "Package.swift"))) {
+    cache = {
+      command: "swift",
+      baseArgs: ["run", "-c", "release", "occtkit", "run"],
+      cwd: SCRIPTS_PROJECT,
+    };
+    return cache;
+  }
+
+  throw new Error(
+    "occtkit not found. Install one of:\n" +
+      "  • `make install` from ~/Projects/OCCTSwiftScripts (puts occtkit on $PATH)\n" +
+      "  • clone OCCTSwiftScripts to ~/Projects/OCCTSwiftScripts so `swift run occtkit` is available\n" +
+      "Requires OCCTSwiftScripts >= v0.5.0-rc.1."
+  );
+}

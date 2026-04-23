@@ -78,6 +78,7 @@ Shape.& (lhs: Shape, rhs: Shape) -> Shape?
 
 ## Boolean Pre-Validation
 Shape.isValidForBoolean(with other: Shape) -> Bool
+Shape.isValidForBoolean -> Bool
 
 ## Boolean with History
 Shape.fuseWithHistory(_ other: Shape) -> BooleanResult?
@@ -201,11 +202,13 @@ Wire.helixTapered(origin: SIMD3<Double> = .zero, axis: SIMD3<Double> = SIMD3(0, 
 ## Wire Explorer
 Wire.orderedEdgePointCount(at index: Int) -> Int
 Wire.orderedEdgePoints(at index: Int, maxPoints: Int? = nil) -> [SIMD3<Double>]?
+Wire.orderedEdgeCount -> Int
 
 ## Wire Edge Access
 Wire.edges() -> [Edge]
 Wire.allEdgePolylines(deflection: Double = 0.1, maxPointsPerEdge: Int = 1000) -> [[SIMD3<Double>]]
 Wire.edgePolyline(at index: Int, deflection: Double = 0.1, maxPoints: Int = 1000) -> [SIMD3<Double>]?
+Wire.bounds -> (min: SIMD3<Double>, max: SIMD3<Double>)
 
 ## Wire Topology Analysis
 Wire.analyze(tolerance: Double = 1e-6) -> WireAnalysis?
@@ -254,6 +257,7 @@ Curve2D.mirrored(acrossLine point: SIMD2<Double>, direction: SIMD2<Double>) -> C
 Curve2D.mirrored(acrossPoint point: SIMD2<Double>) -> Curve2D?
 Curve2D.length(from u1: Double, to u2: Double) -> Double?
 Curve2D.parameterAtLength(_ arcLength: Double, from fromParameter: Double? = nil) -> Double?
+Curve2D.length -> Double?
 
 ## Local Properties (Curvature, Normal, Inflection)
 Curve2D.curvature(at u: Double) -> Double
@@ -336,21 +340,44 @@ Curve2D.deserializeCurves(_ data: String) -> [Curve2D]?
 
 ## Geom2d_Circle Properties
 Curve2D.setRadius(_ r: Double) -> Bool
+Curve2D.radius -> Double
+Curve2D.eccentricity -> Double
+Curve2D.center -> SIMD2<Double>
+Curve2D.xAxis -> (position: SIMD2<Double>, direction: SIMD2<Double>)
+Curve2D.circleProperties -> CircleProperties
 
 ## Geom2d_Ellipse Properties
 Curve2D.setMajorRadius(_ r: Double) -> Bool
 Curve2D.setMinorRadius(_ r: Double) -> Bool
+Curve2D.majorRadius -> Double
+Curve2D.minorRadius -> Double
+Curve2D.eccentricity -> Double
+Curve2D.focal -> Double
+Curve2D.focus1 -> SIMD2<Double>
+Curve2D.ellipseProperties -> EllipseProperties
 
 ## Geom2d_Parabola Properties
 Curve2D.setFocal(_ f: Double) -> Bool
+Curve2D.focal -> Double
+Curve2D.focus -> SIMD2<Double>
+Curve2D.eccentricity -> Double
+Curve2D.parameter -> Double
+Curve2D.parabolaProperties -> ParabolaProperties
 
 ## Geom2d_Line Properties
 Curve2D.setDirection(_ d: SIMD2<Double>) -> Bool
 Curve2D.setLocation(_ p: SIMD2<Double>) -> Bool
 Curve2D.distance(to point: SIMD2<Double>) -> Double
+Curve2D.direction -> SIMD2<Double>
+Curve2D.location -> SIMD2<Double>
+Curve2D.lin2d -> (location: SIMD2<Double>, direction: SIMD2<Double>)
+Curve2D.lineProperties -> LineProperties
 
 ## Geom2d_OffsetCurve Properties
 Curve2D.setOffset(_ v: Double) -> Bool
+Curve2D.offset -> Double
+Curve2D.basisCurve -> Curve2D?
+Curve2D.offsetProperties -> OffsetProperties
 
 ## v0.115.0: Interpolation expansion, trim, length
 Curve2D.interpolate(points: [SIMD2<Double>], startTangent: SIMD2<Double>, endTangent: SIMD2<Double>) -> Curve2D?
@@ -370,6 +397,16 @@ Curve2D.bsplineLocateU(u: Double, paramTol: Double) -> (i1: Int, i2: Int)
 Curve2D.bsplineKnot(index: Int) -> Double
 Curve2D.bsplineMultiplicity(index: Int) -> Int
 Curve2D.bsplineIsCN(_ n: Int) -> Bool
+Curve2D.bsplineFirstUKnotIndex -> Int
+Curve2D.bsplineLastUKnotIndex -> Int
+Curve2D.bsplineKnotDistribution -> Int
+Curve2D.bsplineMultiplicities -> [Int]
+Curve2D.bsplineStartPoint -> SIMD2<Double>
+Curve2D.bsplineEndPoint -> SIMD2<Double>
+Curve2D.bsplinePoles -> [SIMD2<Double>]
+Curve2D.bsplineIsClosed -> Bool
+Curve2D.bsplineIsPeriodic -> Bool
+Curve2D.bsplineContinuity -> Int
 
 ## Bezier 2D completions
 Curve2D.bezierInsertPoleAfter(_ index: Int, point: SIMD2<Double>) -> Bool
@@ -377,6 +414,9 @@ Curve2D.bezierRemovePole(_ index: Int) -> Bool
 Curve2D.bezierSegment(u1: Double, u2: Double) -> Bool
 Curve2D.bezierIncreaseDegree(_ degree: Int) -> Bool
 Curve2D.bezierReverse() -> Bool
+Curve2D.bezierStartPoint -> SIMD2<Double>
+Curve2D.bezierEndPoint -> SIMD2<Double>
+Curve2D.bezierPoles -> [SIMD2<Double>]
 
 ## Curve2D Transform
 Curve2D.translate(dx: Double, dy: Double) -> Bool
@@ -388,6 +428,30 @@ Curve2D.mirrorAxis(origin: SIMD2<Double>, direction: SIMD2<Double>) -> Bool
 ## Geom2dEval TBezier / AHTBezier Curves
 Curve2D.tBezier(poles: [SIMD2<Double>], alpha: Double) -> Curve2D?
 Curve2D.ahtBezier(poles: [SIMD2<Double>], algDegree: Int, alpha: Double, beta: Double) -> Curve2D?
+
+## Properties
+Curve2D.domain -> ClosedRange<Double>
+Curve2D.isClosed -> Bool
+Curve2D.isPeriodic -> Bool
+Curve2D.period -> Double?
+Curve2D.startPoint -> SIMD2<Double>
+Curve2D.endPoint -> SIMD2<Double>
+
+## BSpline Queries
+Curve2D.poleCount -> Int?
+Curve2D.poles -> [SIMD2<Double>]?
+Curve2D.degree -> Int?
+
+## Bounding Box
+Curve2D.boundingBox -> (min: SIMD2<Double>, max: SIMD2<Double>)?
+
+## Geom2d_Hyperbola Properties
+Curve2D.majorRadius -> Double
+Curve2D.minorRadius -> Double
+Curve2D.eccentricity -> Double
+Curve2D.focal -> Double
+Curve2D.focus1 -> SIMD2<Double>
+Curve2D.hyperbolaProperties -> HyperbolaProperties
 
 ## Geom2dAPI_Interpolate
 Curve2D.interpolate2D(points: [(Double, Double)], periodic: Bool = false, tolerance: Double = 1e-6) -> Curve2D?
@@ -439,6 +503,11 @@ Curve2D.removeKnot(at index: Int, multiplicity: Int, tolerance: Double) -> Bool
 Curve2D.segment(u1: Double, u2: Double) -> Bool
 Curve2D.increaseDegree(to degree: Int) -> Bool
 Curve2D.resolution(tolerance: Double) -> Double
+Curve2D.knotCount -> Int
+Curve2D.poleCount -> Int
+Curve2D.degree -> Int
+Curve2D.isRational -> Bool
+Curve2D.bspline -> BSpline
 
 ## Curve2D Extras
 Curve2D.reverse() -> Bool
@@ -457,9 +526,12 @@ Curve2D.evalBatchD1(params: [Double]) -> [(point: SIMD2<Double>, d1: SIMD2<Doubl
 
 ## RWMesh iterators, Intf_Tool, BRepAlgo_AsDes, BiTgte, Shape extras, Extrema
 Curve2D.parameterAtPoint(_ point: SIMD2<Double>) -> Double
+Curve2D.curveType -> Int
 
 ## TopoDS_Builder, ShapeContents expanded, FreeBoundsProperties, WireBuilder,
 Curve2D.dn(at u: Double, order n: Int) -> SIMD2<Double>
+Curve2D.isBounded -> Bool
+Curve2D.typeName -> String?
 
 ## BREP serialization, gp distance/contains, BezierSurface, Curve2D extras, BSplineSurface extras
 Curve2D.pole(at index: Int) -> SIMD2<Double>
@@ -469,10 +541,17 @@ Curve2D.resolution(tolerance: Double) -> Double
 Curve2D.bsplineSetPeriodic(_ periodic: Bool) -> Bool
 Curve2D.bsplineWeight(at index: Int) -> Double
 Curve2D.bsplineWeights() -> [Double]
+Curve2D.degree -> Int
+Curve2D.poleCount -> Int
+Curve2D.isRational -> Bool
+Curve2D.bezierProperties -> BezierProperties
 
 ## Final cleanup — IsCN, ReversedParameter, ParametricTransformation,
 Curve2D.isCN(_ n: Int) -> Bool
 Curve2D.reversedParameter(_ u: Double) -> Double
+Curve2D.continuityOrder -> Int
+Curve2D.bezierMaxDegree -> Int
+Curve2D.bsplineMaxDegree -> Int
 
 ## BSpline completions, FilletBuilder, ChamferBuilder
 Curve2D.bsplineSetNotPeriodic() -> Bool
@@ -482,6 +561,9 @@ Curve2D.bsplineIncrementMultiplicity(from: Int, to: Int, step: Int = 1) -> Bool
 Curve2D.bsplineSetKnots(_ knots: [Double]) -> Bool
 Curve2D.bsplineReverse() -> Bool
 Curve2D.bsplineMovePointAndTangent(u: Double, point: SIMD2<Double>, tangent: SIMD2<Double>, tolerance: Double, poleRange: ClosedRange<Int>) -> Bool
+
+## Curve2D continuity
+Curve2D.continuity -> Int
 
 ## ShapeConstruct_Curve extensions
 Curve2D.convertSegmentToBSpline(first: Double, last: Double, precision: Double = 1e-6) -> Curve2D?
@@ -535,6 +617,7 @@ Curve3D.mirrored(acrossPoint point: SIMD3<Double>) -> Curve3D?
 Curve3D.mirrored(acrossAxis point: SIMD3<Double>, direction: SIMD3<Double>) -> Curve3D?
 Curve3D.mirrored(acrossPlane point: SIMD3<Double>, normal: SIMD3<Double>) -> Curve3D?
 Curve3D.length(from u1: Double, to u2: Double) -> Double?
+Curve3D.length -> Double?
 
 ## Conversion (GeomConvert)
 Curve3D.toBSpline() -> Curve3D?
@@ -585,6 +668,7 @@ Curve3D.joined(curves: [Curve3D], tolerance: Double = 1e-6) -> Curve3D?
 
 ## ShapeAnalysis_Curve expansion
 Curve3D.projectPoint(_ point: SIMD3<Double>, precision: Double = 1e-6) -> PointProjection
+Curve3D.distance(to point: SIMD3<Double>, precision: Double = 1e-6) -> Double
 Curve3D.validateRange(first: Double, last: Double, precision: Double = 1e-6) -> ValidatedRange
 Curve3D.samplePoints(first: Double, last: Double, maxPoints: Int = 1000) -> [SIMD3<Double>]
 
@@ -600,6 +684,11 @@ Curve3D.hyperbolaThreePoints(s1: SIMD3<Double>, s2: SIMD3<Double>, center: SIMD3
 
 ## LocalAnalysis
 Curve3D.continuityWith(_ other: Curve3D, u1: Double, u2: Double, order: Int = 4) -> ContinuityAnalysis?
+Curve3D.isC0 -> Bool
+Curve3D.isG1 -> Bool
+Curve3D.isC1 -> Bool
+Curve3D.isG2 -> Bool
+Curve3D.isC2 -> Bool
 
 ## v0.80.0: Extrema, ProjLib, gce factories
 Curve3D.extremaCC(range1: ClosedRange<Double>? = nil, other: Curve3D, range2: ClosedRange<Double>? = nil) -> CurveCurveExtrema
@@ -620,21 +709,54 @@ Curve3D.deserializeCurves(_ data: String) -> [Curve3D]?
 
 ## Geom_Circle Properties
 Curve3D.setRadius(_ r: Double) -> Bool
+Curve3D.radius -> Double
+Curve3D.eccentricity -> Double
+Curve3D.center -> SIMD3<Double>
+Curve3D.xAxis -> (position: SIMD3<Double>, direction: SIMD3<Double>)
+Curve3D.yAxis -> (position: SIMD3<Double>, direction: SIMD3<Double>)
+Curve3D.circleProperties -> CircleProperties
 
 ## Geom_Ellipse Properties
 Curve3D.setMajorRadius(_ r: Double) -> Bool
 Curve3D.setMinorRadius(_ r: Double) -> Bool
+Curve3D.majorRadius -> Double
+Curve3D.minorRadius -> Double
+Curve3D.eccentricity -> Double
+Curve3D.focal -> Double
+Curve3D.focus1 -> SIMD3<Double>
+Curve3D.focus2 -> SIMD3<Double>
+Curve3D.parameter -> Double
+Curve3D.directrix1 -> (position: SIMD3<Double>, direction: SIMD3<Double>)
+Curve3D.ellipseProperties -> EllipseProperties
 
 ## Geom_Hyperbola Properties
 Curve3D.setMajorRadius(_ r: Double) -> Bool
 Curve3D.setMinorRadius(_ r: Double) -> Bool
+Curve3D.majorRadius -> Double
+Curve3D.minorRadius -> Double
+Curve3D.eccentricity -> Double
+Curve3D.focal -> Double
+Curve3D.focus1 -> SIMD3<Double>
+Curve3D.asymptote1 -> (position: SIMD3<Double>, direction: SIMD3<Double>)
+Curve3D.hyperbolaProperties -> HyperbolaProperties
 
 ## Geom_Parabola Properties
 Curve3D.setFocal(_ f: Double) -> Bool
+Curve3D.focal -> Double
+Curve3D.focus -> SIMD3<Double>
+Curve3D.eccentricity -> Double
+Curve3D.parameter -> Double
+Curve3D.directrix -> (position: SIMD3<Double>, direction: SIMD3<Double>)
+Curve3D.parabolaProperties -> ParabolaProperties
 
 ## Geom_Line Properties
 Curve3D.setDirection(_ d: SIMD3<Double>) -> Bool
 Curve3D.setLocation(_ p: SIMD3<Double>) -> Bool
+Curve3D.direction -> SIMD3<Double>
+Curve3D.location -> SIMD3<Double>
+Curve3D.position -> (location: SIMD3<Double>, direction: SIMD3<Double>)
+Curve3D.lin -> (location: SIMD3<Double>, direction: SIMD3<Double>)
+Curve3D.lineProperties -> LineProperties
 
 ## v0.115.0: Interpolation expansion, length, closest point
 Curve3D.interpolate(points: [SIMD3<Double>], startTangent: SIMD3<Double>, endTangent: SIMD3<Double>) -> Curve3D?
@@ -649,9 +771,17 @@ Curve3D.arcLengthBetween(_ param1: Double, _ param2: Double) -> Double
 Curve3D.closestParameter(to point: SIMD3<Double>) -> Double
 Curve3D.splitAtContinuity(continuity: Int = 1, tolerance: Double = 1e-6, maxSegments: Int = 32) -> [Curve3D]
 Curve3D.concatenateG1(curves: [Curve3D], tolerance: Double = 1e-6) -> Curve3D?
+Curve3D.totalArcLength -> Double
 
 ## v0.125.0: Bezier Curve deep method completion
 Curve3D.bezierIsCN(_ n: Int) -> Bool
+Curve3D.bezierStartPoint -> SIMD3<Double>
+Curve3D.bezierEndPoint -> SIMD3<Double>
+Curve3D.bezierPoles -> [SIMD3<Double>]
+Curve3D.bezierWeights -> [Double]?
+Curve3D.bezierIsClosed -> Bool
+Curve3D.bezierIsPeriodic -> Bool
+Curve3D.bezierContinuity -> Int
 
 ## Bezier 3D completions
 Curve3D.bezierInsertPoleBefore(_ index: Int, point: SIMD3<Double>) -> Bool
@@ -686,12 +816,31 @@ Curve3D.tBezierRational(poles: [SIMD3<Double>], weights: [Double], alpha: Double
 Curve3D.ahtBezier(poles: [SIMD3<Double>], algDegree: Int, alpha: Double, beta: Double) -> Curve3D?
 Curve3D.ahtBezierRational(poles: [SIMD3<Double>], weights: [Double], algDegree: Int, alpha: Double, beta: Double) -> Curve3D?
 
+## Properties
+Curve3D.domain -> ClosedRange<Double>
+Curve3D.isClosed -> Bool
+Curve3D.isPeriodic -> Bool
+Curve3D.period -> Double?
+Curve3D.startPoint -> SIMD3<Double>
+Curve3D.endPoint -> SIMD3<Double>
+
+## BSpline Queries
+Curve3D.poleCount -> Int?
+Curve3D.poles -> [SIMD3<Double>]?
+Curve3D.degree -> Int
+
+## Bounding Box
+Curve3D.boundingBox -> (min: SIMD3<Double>, max: SIMD3<Double>)?
+
 ## RWStl, ShapeAnalysis_Curve statics, BRepExtrema_SelfIntersection pairs,
 Curve3D.isClosedWithPrecision(_ precision: Double) -> Bool
+Curve3D.isPeriodicSA -> Bool
+Curve3D.offsetBasisCurve -> Curve3D?
 
 ## Geom_TrimmedCurve
 Curve3D.trimmed(u1: Double, u2: Double) -> Curve3D?
 Curve3D.setTrim(u1: Double, u2: Double) -> Bool
+Curve3D.trimmedBasis -> Curve3D?
 
 ## GC_MakeCircle
 Curve3D.gcCircle(center: SIMD3<Double>, normal: SIMD3<Double>, radius: Double) -> Curve3D?
@@ -722,6 +871,13 @@ Curve3D.segment(u1: Double, u2: Double) -> Bool
 Curve3D.increaseDegree(to degree: Int) -> Bool
 Curve3D.resolution(tolerance3d: Double) -> Double
 Curve3D.setPeriodic(_ periodic: Bool) -> Bool
+Curve3D.knotCount -> Int
+Curve3D.poleCount -> Int
+Curve3D.degree -> Int
+Curve3D.isRational -> Bool
+Curve3D.knots -> [Double]
+Curve3D.multiplicities -> [Int]
+Curve3D.bspline -> BSpline
 
 ## Bezier Curve Methods
 Curve3D.pole(at index: Int) -> SIMD3<Double>
@@ -731,6 +887,10 @@ Curve3D.insertPoleAfter(index: Int, point: SIMD3<Double>) -> Bool
 Curve3D.removePole(at index: Int) -> Bool
 Curve3D.segment(u1: Double, u2: Double) -> Bool
 Curve3D.increaseDegree(to degree: Int) -> Bool
+Curve3D.isRational -> Bool
+Curve3D.degree -> Int
+Curve3D.poleCount -> Int
+Curve3D.bezier -> Bezier
 
 ## Curve3D Extras
 Curve3D.reverse() -> Bool
@@ -752,6 +912,7 @@ Curve3D.evalBatchD1(params: [Double]) -> [(point: SIMD3<Double>, d1: SIMD3<Doubl
 Curve3D.parameterAtPoint(_ point: SIMD3<Double>) -> Double
 Curve3D.locateNearestPoint(_ point: SIMD3<Double>, initParam: Double, tolerance: Double = 1e-6) -> (parameter: Double, distance: Double)?
 Curve3D.projectPointAll(_ point: SIMD3<Double>, maxResults: Int = 10) -> [(parameter: Double, distance: Double)]
+Curve3D.curveType -> Int
 
 ## MakeEdge completions, ProjOnCurve/Surf, DistShapeShape, ShapeFix_Wire/Face,
 Curve3D.bsplineSetKnot(index: Int, value: Double) -> Bool
@@ -766,9 +927,12 @@ Curve3D.bsplineLocalD2(u: Double, fromKnot: Int, toKnot: Int) -> (point: SIMD3<D
 Curve3D.bsplineLocalD3(u: Double, fromKnot: Int, toKnot: Int) -> (point: SIMD3<Double>, d1: SIMD3<Double>, d2: SIMD3<Double>, d3: SIMD3<Double>)
 Curve3D.bsplineLocalDN(u: Double, fromKnot: Int, toKnot: Int, n: Int) -> SIMD3<Double>
 Curve3D.bsplineLocateU(_ u: Double, tolerance: Double = 1e-10) -> Int
+Curve3D.bsplineMaxDegree -> Int
 
 ## TopoDS_Builder, ShapeContents expanded, FreeBoundsProperties, WireBuilder,
 Curve3D.dn(at u: Double, order n: Int) -> SIMD3<Double>
+Curve3D.isBounded -> Bool
+Curve3D.typeName -> String?
 
 ## Curve3D LProp3d Extensions
 Curve3D.localCurvature(at u: Double) -> Double
@@ -781,6 +945,8 @@ Curve3D.isCN(_ n: Int) -> Bool
 Curve3D.reversedParameter(_ u: Double) -> Double
 Curve3D.parametricTransformation(rotation: [Double], translation: SIMD3<Double>) -> Double
 Curve3D.bezierResolution(tolerance3d: Double) -> Double
+Curve3D.continuityOrder -> Int
+Curve3D.bezierMaxDegree -> Int
 
 ## BSpline completions, FilletBuilder, ChamferBuilder
 Curve3D.bsplineSetNotPeriodic() -> Bool
@@ -790,6 +956,13 @@ Curve3D.bsplineIncrementMultiplicity(from: Int, to: Int, step: Int = 1) -> Bool
 Curve3D.bsplineSetKnots(_ knots: [Double]) -> Bool
 Curve3D.bsplineReverse() -> Bool
 Curve3D.bsplineMovePointAndTangent(u: Double, point: SIMD3<Double>, tangent: SIMD3<Double>, tolerance: Double, poleRange: ClosedRange<Int>) -> Bool
+
+## Curve3D continuity
+Curve3D.continuity -> Int
+
+## Builder extensions, Section ops, Curve/Surface queries
+Curve3D.firstParameter -> Double
+Curve3D.lastParameter -> Double
 
 ## GeomConvert_ApproxCurve/Surface
 Curve3D.approxWithDetails(tolerance: Double, continuity: ApproxContinuity = .c2, maxSegments: Int = 100, maxDegree: Int = 8) -> ApproxCurveResult
@@ -839,6 +1012,8 @@ Surface.fromTorus(origin: SIMD3<Double>, axis: SIMD3<Double>, majorRadius: Doubl
 
 ## Geom_OffsetSurface Extensions
 Surface.setOffsetValue(_ value: Double)
+Surface.offsetValue -> Double
+Surface.offsetBasis -> Surface?
 
 ## ShapeAnalysis_Surface
 Surface.projectPointUV(_ point: SIMD3<Double>, precision: Double = 1e-6) -> (u: Double, v: Double, gap: Double)
@@ -882,9 +1057,20 @@ Surface.insertVKnot(v: Double, multiplicity: Int = 1, tolerance: Double = 1e-6) 
 Surface.segment(u1: Double, u2: Double, v1: Double, v2: Double) -> Bool
 Surface.increaseDegree(uDeg: Int, vDeg: Int) -> Bool
 Surface.exchangeUV() -> Bool
+Surface.nbUKnots -> Int
+Surface.nbVKnots -> Int
+Surface.nbUPoles -> Int
+Surface.nbVPoles -> Int
+Surface.uDegree -> Int
+Surface.vDegree -> Int
+Surface.isURational -> Bool
+Surface.isVRational -> Bool
+Surface.bsplineSurface -> BSpline
 
 ## Surface Extras
 Surface.copy() -> Surface?
+Surface.parameterBounds -> (uMin: Double, uMax: Double, vMin: Double, vMax: Double)
+Surface.surfaceContinuityOrder -> Int
 
 ## GridEval Surface Extensions
 Surface.gridEvalD0(uParams: [Double], vParams: [Double]) -> [SIMD3<Double>]
@@ -898,6 +1084,7 @@ Surface.evalD2(u: Double, v: Double) -> (point: SIMD3<Double>, d1u: SIMD3<Double
 ## RWMesh iterators, Intf_Tool, BRepAlgo_AsDes, BiTgte, Shape extras, Extrema
 Surface.locateNearestPoint(_ point: SIMD3<Double>, initU: Double, initV: Double, tolerance: Double = 1e-6) -> (u: Double, v: Double, distance: Double)?
 Surface.projectPointAll(_ point: SIMD3<Double>, maxResults: Int = 10) -> [(u: Double, v: Double, distance: Double)]
+Surface.surfaceType -> Int
 
 ## MakeEdge completions, ProjOnCurve/Surf, DistShapeShape, ShapeFix_Wire/Face,
 Surface.bsplineSetUKnot(index: Int, value: Double) -> Bool
@@ -909,6 +1096,7 @@ Surface.bsplineRemoveUKnot(index: Int, multiplicity: Int, tolerance: Double) -> 
 
 ## TopoDS_Builder, ShapeContents expanded, FreeBoundsProperties, WireBuilder,
 Surface.dn(u: Double, v: Double, nu: Int, nv: Int) -> SIMD3<Double>
+Surface.typeName -> String?
 
 ## Surface LProp3d Extensions
 Surface.localCurvatures(u: Double, v: Double) -> LocalCurvatures?
@@ -924,6 +1112,13 @@ Surface.bsplineResolution(tolerance3d: Double) -> (uResolution: Double, vResolut
 Surface.bsplineSetUPeriodic(_ periodic: Bool) -> Bool
 Surface.bsplineSetVPeriodic(_ periodic: Bool) -> Bool
 Surface.bsplineWeight(uIndex: Int, vIndex: Int) -> Double
+Surface.nbUPoles -> Int
+Surface.nbVPoles -> Int
+Surface.uDegree -> Int
+Surface.vDegree -> Int
+Surface.isURational -> Bool
+Surface.isVRational -> Bool
+Surface.bezierProperties -> BezierProperties
 
 ## Final cleanup — IsCN, ReversedParameter, ParametricTransformation,
 Surface.isCNu(_ n: Int) -> Bool
@@ -934,6 +1129,8 @@ Surface.uReversedParameter(_ u: Double) -> Double
 Surface.vReversedParameter(_ v: Double) -> Double
 Surface.bsplineRemoveVKnot(index: Int, mult: Int, tolerance: Double) -> Bool
 Surface.bezierResolution(tolerance3d: Double) -> (u: Double, v: Double)
+Surface.bezierMaxDegree -> Int
+Surface.bsplineMaxDegree -> Int
 
 ## BSpline completions, FilletBuilder, ChamferBuilder
 Surface.bsplineSetUNotPeriodic() -> Bool
@@ -952,9 +1149,18 @@ Surface.bsplineSetWeightRow(uIndex: Int, weights: [Double]) -> Bool
 Surface.bsplineIncrementUMultiplicity(fromIndex: Int, toIndex: Int, step: Int) -> Bool
 Surface.bsplineIncrementVMultiplicity(fromIndex: Int, toIndex: Int, step: Int) -> Bool
 Surface.bsplineCheckAndSegment(u1: Double, u2: Double, v1: Double, v2: Double, uTolerance: Double = 1e-10, vTolerance: Double = 1e-10) -> Bool
+Surface.bsplineFirstUKnotIndex -> Int
+Surface.bsplineLastUKnotIndex -> Int
+Surface.bsplineFirstVKnotIndex -> Int
+Surface.bsplineLastVKnotIndex -> Int
+
+## Surface continuity
+Surface.continuity -> Int
+Surface.nBounds -> (uSpans: Int, vSpans: Int)
 
 ## Surface Extensions (ShapeCustom_Surface periodic + gap)
 Surface.convertToPeriodic() -> Surface?
+Surface.conversionGap -> Double
 
 ## GeomConvert_ApproxCurve/Surface
 Surface.approxWithDetails(tolerance: Double, uContinuity: ApproxContinuity = .c1, vContinuity: ApproxContinuity = .c1, maxDegree: Int = 8, maxSegments: Int = 100) -> ApproxSurfaceResult
@@ -974,12 +1180,17 @@ Surface.splitByArea(parts: Int, intoSquares: Bool = false) -> SplitResult?
 ## Curve/Surface Recognition
 Surface.toAnalyticalWithGap(tolerance: Double) -> SurfaceToAnalyticalResult?
 Surface.toAnalyticalWithGap(tolerance: Double, uMin: Double, uMax: Double, vMin: Double, vMax: Double) -> SurfaceToAnalyticalResult?
+Surface.isCanonical -> Bool
 
 ## GeomFill_Stretch
 Surface.stretchFill(p1: [SIMD3<Double>], p2: [SIMD3<Double>], p3: [SIMD3<Double>], p4: [SIMD3<Double>]) -> StretchFillResult?
 
 ## GeomFill_AppSurf
 Surface.appSurf(curves: [Curve3D], degMin: Int = 3, degMax: Int = 8, tol3d: Double = 1e-3, tol2d: Double = 1e-3) -> AppSurfResult?
+
+## (uncategorized)
+Surface.torusAxis -> (origin: SIMD3<Double>, direction: SIMD3<Double>)?
+Surface.revolutionAxis -> (origin: SIMD3<Double>, direction: SIMD3<Double>)?
 
 ## Evaluation
 Surface.point(atU u: Double, v: Double) -> SIMD3<Double>
@@ -1096,6 +1307,11 @@ Surface.splitByContinuity(criterion: Int = 2, tolerance: Double = 1e-6) -> Conti
 
 ## LocalAnalysis
 Surface.continuityWith(_ other: Surface, u1: Double, v1: Double, u2: Double, v2: Double, order: Int = 4) -> ContinuityAnalysis?
+Surface.isC0 -> Bool
+Surface.isG1 -> Bool
+Surface.isC1 -> Bool
+Surface.isG2 -> Bool
+Surface.isC2 -> Bool
 
 ## GeomFill_NSections
 Surface.nSections(curves: [Curve3D], params: [Double]) -> Surface?
@@ -1128,19 +1344,36 @@ Surface.deserializeSurfaces(_ data: String) -> [Surface]?
 ## Geom_Plane Properties
 Surface.uIso(_ u: Double) -> Curve3D?
 Surface.vIso(_ v: Double) -> Curve3D?
+Surface.coefficients -> (a: Double, b: Double, c: Double, d: Double)
+Surface.pln -> (origin: SIMD3<Double>, normal: SIMD3<Double>)
+Surface.planeProperties -> PlaneProperties
 
 ## Geom_SphericalSurface Properties
 Surface.setRadius(_ r: Double) -> Bool
 Surface.uIso(_ u: Double) -> Curve3D?
 Surface.vIso(_ v: Double) -> Curve3D?
+Surface.radius -> Double
+Surface.area -> Double
+Surface.volume -> Double
+Surface.center -> SIMD3<Double>
+Surface.sphere -> (center: SIMD3<Double>, radius: Double)
+Surface.sphereProperties -> SphereProperties
 
 ## Geom_ToroidalSurface Properties
 Surface.setMajorRadius(_ r: Double) -> Bool
 Surface.setMinorRadius(_ r: Double) -> Bool
+Surface.majorRadius -> Double
+Surface.minorRadius -> Double
+Surface.area -> Double
+Surface.volume -> Double
+Surface.torusProperties -> TorusProperties
 
 ## Geom_CylindricalSurface Properties
 Surface.setRadius(_ r: Double) -> Bool
 Surface.uIso(_ u: Double) -> Curve3D?
+Surface.radius -> Double
+Surface.axis -> (position: SIMD3<Double>, direction: SIMD3<Double>)
+Surface.cylinderProperties -> CylinderProperties
 
 ## v0.115.0: Surface from point grid, normal, curvatures
 Surface.fromPointGrid(points: [SIMD3<Double>], uCount: Int, vCount: Int, degMin: Int = 3, degMax: Int = 8, continuity: Int = 2, tolerance: Double = 1e-3) -> Surface?
@@ -1162,17 +1395,37 @@ Surface.bsplineUKnot(index: Int) -> Double
 Surface.bsplineVKnot(index: Int) -> Double
 Surface.bsplineUMultiplicity(index: Int) -> Int
 Surface.bsplineVMultiplicity(index: Int) -> Int
+Surface.bsplineUKnotDistribution -> Int
+Surface.bsplineVKnotDistribution -> Int
+Surface.bsplinePoles -> [SIMD3<Double>]
+Surface.bsplineBounds -> (u1: Double, u2: Double, v1: Double, v2: Double)
+Surface.bsplineIsUClosed -> Bool
+Surface.bsplineIsVClosed -> Bool
 
 ## v0.125.0: Bezier Surface deep method completion
 Surface.bezierUIso(u: Double) -> Curve3D?
 Surface.bezierVIso(v: Double) -> Curve3D?
 Surface.bezierIsCNu(_ n: Int) -> Bool
 Surface.bezierIsCNv(_ n: Int) -> Bool
+Surface.bezierIsUClosed -> Bool
+Surface.bezierIsVClosed -> Bool
+Surface.bezierIsUPeriodic -> Bool
+Surface.bezierIsVPeriodic -> Bool
+Surface.bezierContinuity -> Int
+Surface.bezierPoles -> [SIMD3<Double>]
+Surface.bezierWeights -> [Double]?
+Surface.bezierBounds -> (u1: Double, u2: Double, v1: Double, v2: Double)
+Surface.bezierNbUPoles -> Int
+Surface.bezierNbVPoles -> Int
+Surface.bezierUDegree -> Int
+Surface.bezierVDegree -> Int
 
 ## BSpline Surface completions
 Surface.bsplineUReverse() -> Bool
 Surface.bsplineVReverse() -> Bool
 Surface.bsplinePeriodicNormalization(u: inout Double, v: inout Double) -> Bool
+Surface.bsplineUMultiplicities -> [Int]
+Surface.bsplineVMultiplicities -> [Int]
 
 ## Bezier Surface completions
 Surface.bezierInsertPoleColAfter(_ colIndex: Int, poles: [SIMD3<Double>]) -> Bool
@@ -1215,6 +1468,49 @@ Surface.gordon(profiles: [Curve3D], guides: [Curve3D], tolerance: Double = 1e-3)
 Surface.tBezier(poles: [SIMD3<Double>], uCount: Int, vCount: Int, alphaU: Double, alphaV: Double) -> Surface?
 Surface.ahtBezier(poles: [SIMD3<Double>], uCount: Int, vCount: Int, algDegreeU: Int, algDegreeV: Int, alphaU: Double, alphaV: Double, betaU: Double, betaV: Double) -> Surface?
 
+## Properties
+Surface.surfaceKind -> SurfaceType
+Surface.continuityClass -> Continuity
+Surface.isPlane -> Bool
+Surface.isCylinder -> Bool
+Surface.isCone -> Bool
+Surface.isSphere -> Bool
+Surface.isTorus -> Bool
+Surface.isBezier -> Bool
+Surface.isBSpline -> Bool
+Surface.isSurfaceOfRevolution -> Bool
+Surface.isSurfaceOfExtrusion -> Bool
+Surface.isOffsetSurface -> Bool
+Surface.domain -> (uMin: Double, uMax: Double, vMin: Double, vMax: Double)
+Surface.isUClosed -> Bool
+Surface.isVClosed -> Bool
+Surface.isUPeriodic -> Bool
+Surface.isVPeriodic -> Bool
+Surface.uPeriod -> Double?
+Surface.vPeriod -> Double?
+
+## Bounding Box
+Surface.boundingBox -> (min: SIMD3<Double>, max: SIMD3<Double>)?
+
+## BSpline/Bezier Queries
+Surface.uPoleCount -> Int
+Surface.vPoleCount -> Int
+Surface.poles -> [[SIMD3<Double>]]
+Surface.uDegree -> Int
+Surface.vDegree -> Int
+
+## Geom_ConicalSurface Properties
+Surface.semiAngle -> Double
+Surface.refRadius -> Double
+Surface.apex -> SIMD3<Double>
+Surface.axis -> (position: SIMD3<Double>, direction: SIMD3<Double>)
+Surface.coneProperties -> ConeProperties
+
+## Geom_SweptSurface Properties
+Surface.direction -> SIMD3<Double>
+Surface.basisCurve -> Curve3D?
+Surface.sweptProperties -> SweptProperties
+
 Infinite surfaces must be trimmed before converting to BSpline.`,
 
   analysis: `# Analysis & Measurement
@@ -1227,6 +1523,10 @@ Edge.normal(at parameter: Double) -> SIMD3<Double>?
 Edge.centerOfCurvature(at parameter: Double) -> SIMD3<Double>?
 Edge.torsion(at parameter: Double) -> Double?
 Edge.project(point: SIMD3<Double>) -> CurveProjection?
+Edge.distance(to point: SIMD3<Double>) -> Double?
+Edge.parameterBounds -> (first: Double, last: Double)?
+Edge.curveType -> CurveType
+Edge.curve3D -> Curve3D?
 
 ## Sampling
 Edge.points(count: Int? = nil) -> [SIMD3<Double>]
@@ -1235,6 +1535,8 @@ Edge.points(count: Int? = nil) -> [SIMD3<Double>]
 Edge.isSeam(on face: Face) -> Bool
 Edge.adjacentFaces(in shape: Shape) -> (Face, Face?)?
 Edge.dihedralAngle(between face1: Face, and face2: Face, at parameter: Double = 0.5) -> Double?
+Edge.hasCurve3D -> Bool
+Edge.isClosed3D -> Bool
 
 ## Curve Approximation
 Edge.approximatedCurve(tolerance: Double = 1e-3, maxSegments: Int = 100, maxDegree: Int = 8) -> Curve3D?
@@ -1249,10 +1551,20 @@ Edge.pcurveValue(at parameter: Double, on face: Face) -> SIMD2<Double>?
 Edge.approxCurveOnSurface(face: Face, tolerance: Double = 1e-4, maxSegments: Int = 10, maxDegree: Int = 8) -> Shape?
 
 ## Properties
+Edge.length -> Double
+Edge.bounds -> (min: SIMD3<Double>, max: SIMD3<Double>)
+Edge.isLine -> Bool
+Edge.isCircle -> Bool
+Edge.endpoints -> (start: SIMD3<Double>, end: SIMD3<Double>)
 Face.isHorizontal(tolerance: Double = 0.01) -> Bool
 Face.isUpwardFacing(tolerance: Double = 0.01) -> Bool
 Face.isDownwardFacing(tolerance: Double = 0.01) -> Bool
 Face.isVertical(tolerance: Double = 0.01) -> Bool
+Face.normal -> SIMD3<Double>?
+Face.outerWire -> Wire?
+Face.bounds -> (min: SIMD3<Double>, max: SIMD3<Double>)
+Face.isPlanar -> Bool
+Face.zLevel -> Double?
 
 ## Surface Properties
 Face.area(tolerance: Double = 1e-6) -> Double
@@ -1264,23 +1576,49 @@ Face.principalCurvatures(atU u: Double, v: Double) -> PrincipalCurvatures?
 Face.project(point: SIMD3<Double>) -> SurfaceProjection?
 Face.allProjections(of point: SIMD3<Double>) -> [SurfaceProjection]
 Face.intersection(with other: Face, tolerance: Double = 1e-6) -> Shape?
+Face.uvBounds -> (uMin: Double, uMax: Double, vMin: Double, vMax: Double)?
+Face.surfaceType -> SurfaceType
 
 ## BRepGProp_Face Evaluation
 Face.evaluateGProp(u: Double, v: Double) -> GPropEvaluation?
+Face.naturalBounds -> (uMin: Double, uMax: Double, vMin: Double, vMax: Double)?
+
+## Angles
+Edge.angle(to other: Edge, atParameter t: Double = 0.5) -> Double?
+Edge.isParallel(to other: Edge, toleranceRadians: Double = 1e-4) -> Bool?
+Edge.isPerpendicular(to other: Edge, toleranceRadians: Double = 1e-4) -> Bool?
+Face.angle(to other: Face) -> Double?
+Face.isParallel(to other: Face, toleranceRadians: Double = 1e-4) -> Bool?
+Face.isPerpendicular(to other: Face, toleranceRadians: Double = 1e-4) -> Bool?
+Face.isCoplanar(with other: Face, tolerance: Double = 1e-6) -> Bool?
+
+## Circle properties (v0.143 M4)
+Edge.circleProperties -> CircleProperties?
+Face.revolutionProperties -> RevolutionProperties?
 
 ## Validation
 Shape.healed() -> Shape?
+Shape.isValid -> Bool
 
 ## Sub-Shape Extraction
 Shape.subShapeCount(ofType type: ShapeType) -> Int
 Shape.subShape(type: ShapeType, index: Int) -> Shape?
 Shape.subShapes(ofType type: ShapeType) -> [Shape]
+Shape.solidCount -> Int
+Shape.solids -> [Shape]
+Shape.shellCount -> Int
+Shape.shells -> [Shape]
+Shape.wireCount -> Int
+Shape.wires -> [Shape]
 
 ## Shape Measurement Extensions
 Shape.properties(density: Double = 1.0) -> ShapeProperties?
 Shape.distance(to other: Shape, deflection: Double = 1e-6) -> DistanceResult?
 Shape.minDistance(to other: Shape) -> Double?
 Shape.intersects(_ other: Shape, tolerance: Double = 1e-6) -> Bool
+Shape.volume -> Double?
+Shape.surfaceArea -> Double?
+Shape.centerOfMass -> SIMD3<Double>?
 
 ## Shape Analysis
 Shape.analyze(tolerance: Double = 1e-6) -> ShapeAnalysisResult?
@@ -1308,6 +1646,7 @@ Face.meshProps(type: MeshPropsType) -> MeshPropsResult
 
 ## MeshShapeTool (Static Mesh Utilities)
 Face.uvPoints(edge: Edge) -> (u1: Double, v1: Double, u2: Double, v2: Double)?
+Face.maxMeshTolerance -> Double
 
 ## ValidateEdge (BRepLib_ValidateEdge)
 Edge.validate(on face: Face, tolerance: Double = 1e-3) -> ValidateEdgeResult
@@ -1320,9 +1659,29 @@ Edge.tangentialDeflectionPoints(angularDeflection: Double = 0.1, curvatureDeflec
 
 ## BRepGProp_Sinert (Surface Inertia per Face)
 Face.surfaceInertia(epsilon: Double) -> FaceSurfaceInertia
+Face.surfaceInertia -> FaceSurfaceInertia
 
 ## BRepGProp_Vinert (Volume Inertia per Face)
 Face.volumeInertia(planeNormal: SIMD3<Double>, planeDistance: Double = 0) -> FaceVolumeInertia
+Face.volumeInertia -> FaceVolumeInertia
+
+## Shape Type
+Shape.shapeType -> ShapeType
+Shape.isValidSolid -> Bool
+
+## Bounds
+Shape.bounds -> (min: SIMD3<Double>, max: SIMD3<Double>)
+Shape.size -> SIMD3<Double>
+Shape.center -> SIMD3<Double>
+
+## Face Validity Checking
+Face.faceCheckResult -> Shape.CheckResult
+
+## BRepGProp_Cinert (Curve Inertia per Edge)
+Edge.curveInertia -> CurveInertia
+
+## (uncategorized)
+Face.primaryAxis -> ShapeAxis?
 
 Shape properties (volume, surfaceArea, centerOfMass, bounds, isValid) are accessed as Swift computed properties.`,
 
@@ -1338,6 +1697,7 @@ Exporter.writeGLTF(shape: Shape, to url: URL, binary: Bool = true, deflection: D
 ## STL Export
 Exporter.writeSTL(shape: Shape, to url: URL, deflection: Double = 0.1, ascii: Bool = false) throws
 Exporter.stlData(shape: Shape, deflection: Double = 0.1) throws -> Data
+Exporter.errorDescription -> String?
 
 ## STEP Export
 Exporter.writeSTEP(shape: Shape, to url: URL, name: String? = nil) throws
@@ -1381,6 +1741,14 @@ Shape.stepData(name: String? = nil) throws -> Data
 
 ## STEP Optimization
 Exporter.optimizeSTEP(input: URL, output: URL) throws
+
+## PDF 1.4 export (#85, v0.150)
+Exporter.writePDF(drawing: Drawing, to url: URL, pageSize: SIMD2<Double> = SIMD2(841, 595), deflection: Double = 0.1) throws
+Exporter.writePDF(sheet: Sheet, body: (PDFWriter) -> Void, to url: URL, deflection: Double = 0.1) throws
+
+## SVG export (#86, v0.150)
+Exporter.writeSVG(drawing: Drawing, to url: URL, deflection: Double = 0.1) throws
+Exporter.writeSVG(sheet: Sheet, body: (SVGWriter) -> Void, to url: URL, deflection: Double = 0.1) throws
 
 ## Import
 Shape.load(from url: URL) throws -> Shape
@@ -1458,6 +1826,7 @@ TopologyGraph.isRemoved(nodeKind: NodeKind, nodeIndex: Int) -> Bool
 
 ## Validate
 TopologyGraph.validate() -> ValidationResult
+TopologyGraph.isValid -> Bool
 
 ## Compact
 TopologyGraph.compact() -> CompactResult
@@ -1513,6 +1882,16 @@ TopologyGraph.solidCompSolidCount(_ solidIndex: Int) -> Int
 
 ## History
 TopologyGraph.clearHistory()
+TopologyGraph.historyRecordCount -> Int
+TopologyGraph.isHistoryEnabled -> Bool
+
+## History Record Readback (v0.141, #72 Phase 0)
+TopologyGraph.historyRecord(at index: Int) -> HistoryRecord?
+TopologyGraph.findOriginal(of derived: NodeRef) -> NodeRef
+TopologyGraph.findDerived(of original: NodeRef) -> [NodeRef]
+TopologyGraph.recordHistory(operationName: String, original: NodeRef, replacements: [NodeRef])
+TopologyGraph.isValid -> Bool
+TopologyGraph.historyRecords -> [HistoryRecord]
 
 ## SameDomain
 TopologyGraph.sameDomainFaces(of faceIndex: Int) -> [Int]
@@ -1525,6 +1904,10 @@ TopologyGraph.productShapeRoot(_ productIndex: Int) -> (kind: NodeKind, index: I
 TopologyGraph.occurrenceProduct(_ occIndex: Int) -> Int
 TopologyGraph.occurrenceParentProduct(_ occIndex: Int) -> Int
 TopologyGraph.occurrenceParentOccurrence(_ occIndex: Int) -> Int?
+TopologyGraph.productCount -> Int
+TopologyGraph.occurrenceCount -> Int
+TopologyGraph.rootProductCount -> Int
+TopologyGraph.rootProductIndices -> [Int]
 
 ## Reference Entry Queries
 TopologyGraph.refChildNodeKind(_ refKind: RefKind, refIndex: Int) -> NodeKind?
@@ -1564,6 +1947,54 @@ TopologyGraph.isShellClosed(_ shellIndex: Int) -> Bool
 ## Solid Additional Queries
 TopologyGraph.solidCompoundCount(_ solidIndex: Int) -> Int
 
+## Topology Counts
+TopologyGraph.nodeCount -> Int
+TopologyGraph.faceCount -> Int
+TopologyGraph.activeFaceCount -> Int
+TopologyGraph.edgeCount -> Int
+TopologyGraph.activeEdgeCount -> Int
+TopologyGraph.vertexCount -> Int
+TopologyGraph.activeVertexCount -> Int
+TopologyGraph.wireCount -> Int
+TopologyGraph.shellCount -> Int
+TopologyGraph.solidCount -> Int
+TopologyGraph.coedgeCount -> Int
+TopologyGraph.compoundCount -> Int
+
+## Geometry Counts
+TopologyGraph.surfaceCount -> Int
+TopologyGraph.curve3DCount -> Int
+TopologyGraph.curve2DCount -> Int
+
+## Root Nodes
+TopologyGraph.rootNodes -> [RootNode]
+
+## Statistics
+TopologyGraph.description -> String
+TopologyGraph.stats -> Stats
+
+## Poly Counts
+TopologyGraph.triangulationCount -> Int
+TopologyGraph.polygon3DCount -> Int
+
+## Active Geometry Counts
+TopologyGraph.activeSurfaceCount -> Int
+TopologyGraph.activeCurve3DCount -> Int
+TopologyGraph.activeCurve2DCount -> Int
+
+## Reference Counts
+TopologyGraph.shellRefCount -> Int
+TopologyGraph.faceRefCount -> Int
+TopologyGraph.wireRefCount -> Int
+TopologyGraph.coedgeRefCount -> Int
+TopologyGraph.vertexRefCount -> Int
+TopologyGraph.solidRefCount -> Int
+TopologyGraph.childRefCount -> Int
+TopologyGraph.occurrenceRefCount -> Int
+
+## CompSolid Count
+TopologyGraph.compSolidCount -> Int
+
 Build a graph-based B-Rep topology from any Shape for fast adjacency queries, analysis, ML export, and geometry sampling. Construct with TopologyGraph(shape:parallel:).`,
 
   topology_graph_builder: `# TopologyGraph Builder (Mutations)
@@ -1594,6 +2025,7 @@ TopologyGraph.appendFullShape(_ shape: Shape, parallel: Bool = false)
 TopologyGraph.beginDeferredInvalidation()
 TopologyGraph.endDeferredInvalidation()
 TopologyGraph.commitMutation()
+TopologyGraph.isDeferredMode -> Bool
 
 ## Builder: Edge Splitting
 TopologyGraph.splitEdge(edgeIndex: Int, vertexIndex: Int, param: Double) -> (subA: Int, subB: Int)?

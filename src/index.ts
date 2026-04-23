@@ -50,10 +50,11 @@ server.tool(
 );
 
 // ── get_script ──────────────────────────────────────────────────────────────
-// Read the current main.swift source.
+// Return the most recent script run in this MCP session.
 server.tool(
   "get_script",
-  "Read the current Swift CAD script source (main.swift) from OCCTSwiftScripts.",
+  "Return the source of the most recent Swift CAD script executed in this MCP session. " +
+    "Returns a 'no script executed' message if execute_script has not been called yet.",
   {},
   async () => {
     return getScript();
@@ -92,6 +93,8 @@ server.tool(
         "surfaces",
         "analysis",
         "import_export",
+        "topology_graph",
+        "topology_graph_builder",
         "all",
       ])
       .describe("API category to look up"),
