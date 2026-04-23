@@ -61,7 +61,7 @@ export class ServeProcess {
     if (this.child && this.child.exitCode === null && !this.child.killed) return;
 
     const oc = await resolveOcctkit();
-    const args = [...oc.baseArgs, "--serve"];
+    const args = [...oc.baseArgs, "run", "--serve"];
     const child = spawn(oc.command, args, {
       cwd: oc.cwd,
       stdio: ["pipe", "pipe", "pipe"],

@@ -9,7 +9,7 @@ const execFileAsync = promisify(execFile);
 export interface OcctkitInvocation {
   /** The executable to spawn. */
   command: string;
-  /** Args prepended before the script path. */
+  /** Args prepended before the verb. Empty for PATH, `swift run …` for fallback. */
   baseArgs: string[];
   /** Working directory for the spawn (only set when using the sibling-repo fallback). */
   cwd?: string;
@@ -30,14 +30,14 @@ export async function resolveOcctkit(): Promise<OcctkitInvocation> {
   if (cache) return cache;
 
   if (await onPath()) {
-    cache = { command: "occtkit", baseArgs: ["run"] };
+    cache = { command: "occtkit", baseArgs: [] };
     return cache;
   }
 
   if (existsSync(join(SCRIPTS_PROJECT, "Package.swift"))) {
     cache = {
       command: "swift",
-      baseArgs: ["run", "-c", "release", "occtkit", "run"],
+      baseArgs: ["run", "-c", "release", "occtkit"],
       cwd: SCRIPTS_PROJECT,
     };
     return cache;

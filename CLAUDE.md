@@ -63,6 +63,13 @@ The 2 min timeout is per-request in both paths. On serve-mode timeout the child 
 | `get_script` | Return the most recent script executed in this MCP session (kept in memory; not a filesystem read) |
 | `export_model` | List exported BREP/STEP/STL/OBJ file paths |
 | `get_api_reference` | Return OCCTSwift API reference by category (or "all") |
+| `graph_validate` | Validate a BREP's topology graph — wraps `occtkit graph-validate` |
+| `graph_compact` | Drop unreferenced nodes, write rebuilt BREP — wraps `occtkit graph-compact` |
+| `graph_dedup` | Deduplicate shared surface/curve geometry — wraps `occtkit graph-dedup` |
+| `graph_ml` | ML-friendly graph + UV/edge sample export — wraps `occtkit graph-ml` |
+| `feature_recognize` | AAG-based pocket + hole detection — wraps `occtkit feature-recognize` |
+
+The five graph/feature tools are thin one-shot wrappers around pre-compiled occtkit verbs defined in `src/graph-tools.ts`. They go through the same `resolveOcctkit()` discovery as `execute_script` but bypass serve mode — these verbs don't compile Swift at call time, so there's no amortisation benefit. Each takes a BREP file path (use `export_model` to list available ones) and returns the verb's JSON report verbatim.
 
 ## Script Template
 
