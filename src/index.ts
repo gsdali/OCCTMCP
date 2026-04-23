@@ -4,6 +4,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { executeScript, getScene, getScript, exportModel, getApiReference } from "./tools.js";
+import {
+  graphValidate,
+  graphCompact,
+  graphDedup,
+  graphMl,
+  featureRecognize,
+} from "./graph-tools.js";
 
 const server = new McpServer({
   name: "occtmcp",
@@ -101,6 +108,97 @@ server.tool(
   },
   async ({ category }) => {
     return getApiReference(category);
+  }
+);
+
+// ── graph_validate ──────────────────────────────────────────────────────────
+// Run BRepGraph validation on a BREP file and return the report JSON.
+server.tool(
+  "graph_validate",
+  "Validate a BREP shape's topology graph. Returns a JSON report: " +
+    "validity, error/warning counts, and per-category issue details. " +
+    "Use export_model to find BREP paths after execute_script.",
+  {
+    brep_path: z.string().describe("Absolute path to a BREP file."),
+  },
+  async ({ brep_path }) => {
+    return graphValidate(brep_path);
+  }
+);
+
+// ── graph_compact ───────────────────────────────────────────────────────────
+// Compact a BREP's topology graph (drops unreferenced nodes) and write a
+// rebuilt BREP to output_path. Returns JSON stats (nodes before/after).
+server.tool(
+  "graph_compact",
+  "Compact a BREP's topology graph (drops unreferenced nodes) and write the " +
+    "rebuilt shape to output_path. Returns a JSON report with before/after " +
+    "node counts.",
+  {
+    brep_path: z.string().describe("Absolute path to the input BREP file."),
+    output_path: z.string().describe("Absolute path where the compacted BREP is written."),
+  },
+  async ({ brep_path, output_path }) => {
+    return graphCompact(brep_path, output_path);
+  }
+);
+
+// ── graph_dedup ─────────────────────────────────────────────────────────────
+// Deduplicate shared surface/curve geometry in a BREP, write rebuilt BREP.
+server.tool(
+  "graph_dedup",
+  "Deduplicate shared surface/curve geometry in a BREP's topology graph. " +
+    "Writes the rebuilt shape to output_path and returns a JSON report.",
+  {
+    brep_path: z.string().describe("Absolute path to the input BREP file."),
+    output_path: z.string().describe("Absolute path where the deduped BREP is written."),
+  },
+  async ({ brep_path, output_path }) => {
+    return graphDedup(brep_path, output_path);
+  }
+);
+
+// ── graph_ml ────────────────────────────────────────────────────────────────
+// Export the topology graph plus UV/edge samples as ML-friendly JSON.
+server.tool(
+  "graph_ml",
+  "Export a BREP's topology graph as ML-friendly JSON: vertex positions, " +
+    "edge/face adjacency (COO), per-face UV-grid samples (position, normal, " +
+    "gaussian/mean curvature), and per-edge polyline samples. Output can be " +
+    "large for complex shapes — up to ~50 MB.",
+  {
+    brep_path: z.string().describe("Absolute path to a BREP file."),
+    uv_samples: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("Per-face UV grid resolution (default 16 × 16)."),
+    edge_samples: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("Per-edge polyline sample count (default 32)."),
+  },
+  async ({ brep_path, uv_samples, edge_samples }) => {
+    return graphMl(brep_path, uv_samples, edge_samples);
+  }
+);
+
+// ── feature_recognize ───────────────────────────────────────────────────────
+// AAG heuristic detection of pockets and holes.
+server.tool(
+  "feature_recognize",
+  "Detect pockets and cylindrical holes in a BREP via AAG (attributed " +
+    "adjacency graph) heuristics. Returns a JSON report listing each " +
+    "pocket's floor/wall faces, z-level, depth, and bounds, plus each " +
+    "hole's face index, radius, and depth.",
+  {
+    brep_path: z.string().describe("Absolute path to a BREP file."),
+  },
+  async ({ brep_path }) => {
+    return featureRecognize(brep_path);
   }
 );
 

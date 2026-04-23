@@ -123,7 +123,7 @@ async function executeOneShot(
   try {
     const { stdout, stderr } = await execFileAsync(
       oc.command,
-      [...oc.baseArgs, scriptPath],
+      [...oc.baseArgs, "run", scriptPath],
       {
         cwd: oc.cwd,
         timeout: TOOL_TIMEOUT_MS, // 2 min for first build; incremental ~1–2s
