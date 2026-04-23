@@ -300,6 +300,52 @@ function parseSwiftFile(source, file) {
     });
   }
 
+  // Find `public var NAME: TYPE` (and `public static var`) declarations.
+  // We only capture explicitly-typed declarations so the signature is useful.
+  // Computed properties (`public var x: Type { ... }`) are still captured — we
+  // stop at the `{` or end-of-line and record the inferred type from the colon.
+  const varRx = /^\s+public\s+(?:static\s+)?var\s+(\w+)\s*:\s*([^{=]+?)(?:\s*\{|$)/;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(varRx);
+    if (!m) continue;
+
+    // Skip deprecated shims (same back-scan as funcs).
+    let deprecated = false;
+    for (let k = i - 1; k >= 0 && k >= i - 6; k--) {
+      const prev = lines[k];
+      if (/@available\s*\(\s*\*\s*,\s*deprecated/.test(prev)) {
+        deprecated = true;
+        break;
+      }
+      const trimmed = prev.trim();
+      if (trimmed === "") break;
+      if (
+        !trimmed.startsWith("@") &&
+        !trimmed.startsWith("///") &&
+        !trimmed.startsWith("//")
+      ) {
+        break;
+      }
+    }
+    if (deprecated) continue;
+
+    const name = m[1];
+    const typeStr = m[2].trim();
+    // Skip private-ish patterns: underscore prefix (conventionally internal).
+    if (name.startsWith("_")) continue;
+
+    out.push({
+      type: typeAt(i),
+      mark: markAt(i),
+      name,
+      // Use an arrow form so vars read like getter signatures in the output.
+      signature: `${name} -> ${typeStr}`,
+      kind: "var",
+      file: basename(file),
+      line: i + 1,
+    });
+  }
+
   return out;
 }
 
