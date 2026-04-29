@@ -160,6 +160,7 @@ Wire.polygon3D(_ points: [SIMD3<Double>], closed: Bool = true) -> Wire?
 ## 3D Paths (for Pipe Sweep)
 Wire.line(from start: SIMD3<Double>, to end: SIMD3<Double>) -> Wire?
 Wire.arc(center: SIMD3<Double>, radius: Double, startAngle: Double, endAngle: Double, normal: SIMD3<Double> = SIMD3(0, 0, 1)) -> Wire?
+Wire.arc(start: SIMD3<Double>, midpoint: SIMD3<Double>, end: SIMD3<Double>) -> Wire?
 Wire.path(_ points: [SIMD3<Double>], closed: Bool = false) -> Wire?
 Wire.bspline(_ controlPoints: [SIMD3<Double>]) -> Wire?
 
@@ -298,7 +299,7 @@ Curve2D.join(_ curves: [Curve2D], tolerance: Double = 1e-6) -> Curve2D?
 Curve2D.evaluateGrid(_ parameters: [Double]) -> [SIMD2<Double>]
 Curve2D.evaluateGridD1(_ parameters: [Double]) -> [(point: SIMD2<Double>, tangent: SIMD2<Double>)]
 
-## v0.51.0: GCE2d_MakeLine variants
+## v0.51.0: GC_MakeLine2d variants
 Curve2D.lineThroughPoints(_ p1: SIMD2<Double>, _ p2: SIMD2<Double>) -> Curve2D?
 Curve2D.lineParallel(point: SIMD2<Double>, direction: SIMD2<Double>, distance: Double) -> Curve2D?
 
@@ -467,23 +468,23 @@ Curve2D.fromEllipseArc(centerX: Double, centerY: Double, majorRadius: Double, mi
 Curve2D.fromHyperbolaArc(centerX: Double, centerY: Double, majorRadius: Double, minorRadius: Double, u1: Double, u2: Double) -> Curve2D?
 Curve2D.fromParabolaArc(centerX: Double, centerY: Double, focal: Double, u1: Double, u2: Double) -> Curve2D?
 
-## GCE2d_MakeCircle
+## GC_MakeCircle2d
 Curve2D.gceCircle(center: SIMD2<Double>, radius: Double) -> Curve2D?
 Curve2D.gceCircle(p1: SIMD2<Double>, p2: SIMD2<Double>, p3: SIMD2<Double>) -> Curve2D?
 Curve2D.gceCircle(center: SIMD2<Double>, pointOn: SIMD2<Double>) -> Curve2D?
 Curve2D.gceCircleParallel(center: SIMD2<Double>, direction: SIMD2<Double>, radius: Double, distance: Double) -> Curve2D?
 Curve2D.gceCircle(axisCenter: SIMD2<Double>, axisDirection: SIMD2<Double>, radius: Double) -> Curve2D?
 
-## GCE2d_MakeEllipse
+## GC_MakeEllipse2d
 Curve2D.gceEllipse(center: SIMD2<Double>, xDirection: SIMD2<Double>, majorRadius: Double, minorRadius: Double) -> Curve2D?
 Curve2D.gceEllipse(s1: SIMD2<Double>, s2: SIMD2<Double>, center: SIMD2<Double>) -> Curve2D?
 Curve2D.gceEllipse(center: SIMD2<Double>, xDirection: SIMD2<Double>, yDirection: SIMD2<Double>, majorRadius: Double, minorRadius: Double) -> Curve2D?
 
-## GCE2d_MakeHyperbola
+## GC_MakeHyperbola2d
 Curve2D.gceHyperbola(center: SIMD2<Double>, xDirection: SIMD2<Double>, majorRadius: Double, minorRadius: Double) -> Curve2D?
 Curve2D.gceHyperbola(s1: SIMD2<Double>, s2: SIMD2<Double>, center: SIMD2<Double>) -> Curve2D?
 
-## GCE2d_MakeParabola
+## GC_MakeParabola2d
 Curve2D.gceParabola(center: SIMD2<Double>, direction: SIMD2<Double>, focalDistance: Double) -> Curve2D?
 Curve2D.gceParabola(directrixPoint: SIMD2<Double>, directrixDirection: SIMD2<Double>, focus: SIMD2<Double>) -> Curve2D?
 

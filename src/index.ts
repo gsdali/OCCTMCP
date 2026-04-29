@@ -11,6 +11,37 @@ import {
   graphMl,
   featureRecognize,
 } from "./graph-tools.js";
+import {
+  removeBody,
+  clearScene,
+  renameBody,
+  setAppearance,
+  compareVersions,
+  exportScene,
+} from "./scene-tools.js";
+import {
+  validateGeometry,
+  recognizeFeatures,
+  applyFeature,
+  generateDrawing,
+} from "./api-tools.js";
+import {
+  computeMetrics,
+  queryTopology,
+  measureDistance,
+  checkThickness,
+  analyzeClearance,
+  generateMesh,
+  transformBody,
+  booleanOp,
+  mirrorOrPattern,
+  healShape,
+  readBrep,
+  importFile,
+  renderPreview,
+  inspectAssembly,
+  setAssemblyMetadata,
+} from "./verb-tools.js";
 
 const server = new McpServer({
   name: "occtmcp",
@@ -200,6 +231,500 @@ server.tool(
   async ({ brep_path }) => {
     return featureRecognize(brep_path);
   }
+);
+
+// ── remove_body ─────────────────────────────────────────────────────────────
+server.tool(
+  "remove_body",
+  "Delete a body from the current scene by id. Removes the body's BREP file " +
+    "from the output directory and re-emits the manifest (triggers viewport reload).",
+  {
+    bodyId: z.string().describe("The id of the body to remove."),
+  },
+  async ({ bodyId }) => removeBody(bodyId)
+);
+
+// ── clear_scene ─────────────────────────────────────────────────────────────
+server.tool(
+  "clear_scene",
+  "Remove every body from the current scene. Optionally preserves the " +
+    "compare_versions history ring buffer.",
+  {
+    keepHistory: z
+      .boolean()
+      .optional()
+      .describe("If true, keep the compare_versions history ring. Default false."),
+  },
+  async ({ keepHistory }) => clearScene(keepHistory ?? false)
+);
+
+// ── rename_body ─────────────────────────────────────────────────────────────
+server.tool(
+  "rename_body",
+  "Change a body's id in the scene manifest. Fails if the new id is already in use.",
+  {
+    bodyId: z.string().describe("Current body id."),
+    newBodyId: z.string().describe("New body id."),
+  },
+  async ({ bodyId, newBodyId }) => renameBody(bodyId, newBodyId)
+);
+
+// ── set_appearance ──────────────────────────────────────────────────────────
+server.tool(
+  "set_appearance",
+  "Update color / opacity / roughness / metallic / display name for a scene " +
+    "body without re-running a script. The viewport reloads automatically.",
+  {
+    bodyId: z.string().describe("Body to update."),
+    color: z
+      .array(z.number())
+      .optional()
+      .describe("RGBA or RGB array (0–1 per channel)."),
+    opacity: z
+      .number()
+      .min(0)
+      .max(1)
+      .optional()
+      .describe("Sets color alpha (0–1). Leaves RGB unchanged."),
+    roughness: z.number().min(0).max(1).optional(),
+    metallic: z.number().min(0).max(1).optional(),
+    name: z.string().optional().describe("Human-readable display name."),
+  },
+  async ({ bodyId, color, opacity, roughness, metallic, name }) =>
+    setAppearance(bodyId, color, opacity, roughness, metallic, name)
+);
+
+// ── compare_versions ────────────────────────────────────────────────────────
+server.tool(
+  "compare_versions",
+  "Diff the current scene against a snapshot from N runs ago. Detects added / " +
+    "removed / appearance-changed / file-changed bodies. Snapshots are taken " +
+    "automatically before each execute_script and scene-mutation call.",
+  {
+    since: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe("How many runs back to compare against. Default 1."),
+  },
+  async ({ since }) => compareVersions(since ?? 1)
+);
+
+// ── export_scene ────────────────────────────────────────────────────────────
+server.tool(
+  "export_scene",
+  "Export current scene bodies (or a subset) to a single file in step / iges / " +
+    "brep / stl / obj / gltf / glb format.",
+  {
+    format: z.enum(["step", "iges", "brep", "stl", "obj", "gltf", "glb"]),
+    outputPath: z.string().describe("Absolute path for the exported file."),
+    bodyIds: z
+      .array(z.string())
+      .optional()
+      .describe("Body ids to include. Defaults to all bodies in the scene."),
+  },
+  async ({ format, outputPath, bodyIds }) =>
+    exportScene(format, outputPath, bodyIds)
+);
+
+// ── validate_geometry ──────────────────────────────────────────────────────
+server.tool(
+  "validate_geometry",
+  "Run topology validation on a scene body (or every body if no id given). " +
+    "Wraps occtkit graph-validate per body and returns a per-body report.",
+  {
+    bodyId: z
+      .string()
+      .optional()
+      .describe("Specific body to validate. If omitted, validates every BREP body."),
+  },
+  async ({ bodyId }) => validateGeometry(bodyId)
+);
+
+// ── recognize_features ─────────────────────────────────────────────────────
+server.tool(
+  "recognize_features",
+  "Detect pockets and holes in a scene body via AAG heuristics. Wraps occtkit " +
+    "feature-recognize and resolves the BREP path from the scene manifest.",
+  {
+    bodyId: z.string().describe("Body to analyse."),
+    kinds: z
+      .array(z.enum(["pocket", "hole"]))
+      .optional()
+      .describe("Restrict to certain kinds. Default: both."),
+  },
+  async ({ bodyId, kinds }) => recognizeFeatures(bodyId, kinds)
+);
+
+// ── apply_feature ──────────────────────────────────────────────────────────
+server.tool(
+  "apply_feature",
+  "Apply a single feature (drill / fillet / chamfer / extrude / revolve / " +
+    "boolean / thread) to an existing scene body via occtkit reconstruct. " +
+    "Without outputBodyId, replaces the body in place. With outputBodyId, " +
+    "adds a new body to the scene.",
+  {
+    bodyId: z.string().describe("Body to apply the feature to."),
+    feature: z
+      .object({})
+      .passthrough()
+      .describe(
+        "FeatureSpec object with a 'kind' discriminator (e.g. " +
+          "'hole', 'fillet', 'chamfer', 'extrude', 'revolve', 'thread', 'boolean'). " +
+          "See OCCTSwiftScripts/Sources/occtkit/Commands/Reconstruct.swift for the schema."
+      ),
+    outputBodyId: z
+      .string()
+      .optional()
+      .describe("If set, write a new body under this id instead of replacing in place."),
+  },
+  async ({ bodyId, feature, outputBodyId }) =>
+    applyFeature(bodyId, feature, outputBodyId)
+);
+
+// ── generate_drawing ───────────────────────────────────────────────────────
+server.tool(
+  "generate_drawing",
+  "Generate a multi-view ISO 128-30 technical drawing as DXF for a scene body. " +
+    "Pass a DrawingSpec (sheet, title, views, sections, dimensions, …). The " +
+    "tool injects the body's BREP path and the output DXF path into the spec, " +
+    "then runs occtkit drawing-export.",
+  {
+    bodyId: z.string().describe("Body to draw."),
+    outputPath: z.string().describe("Absolute path for the output DXF."),
+    spec: z
+      .object({})
+      .passthrough()
+      .describe(
+        "DrawingSpec object: { sheet, title?, views, sections?, dimensions?, ... }. " +
+          "See OCCTSwiftScripts/Sources/DrawingComposer/Spec.swift for the schema. " +
+          "The 'shape' and 'output' fields are filled in by this tool."
+      ),
+  },
+  async ({ bodyId, outputPath, spec }) =>
+    generateDrawing(bodyId, outputPath, spec as Record<string, unknown>)
+);
+
+// ── compute_metrics ────────────────────────────────────────────────────────
+server.tool(
+  "compute_metrics",
+  "Compute volume / surface area / center of mass / bounding box / principal " +
+    "axes for a scene body. Wraps occtkit metrics.",
+  {
+    bodyId: z.string().describe("Body to compute metrics for."),
+    metrics: z
+      .array(
+        z.enum(["volume", "surfaceArea", "centerOfMass", "boundingBox", "principalAxes"])
+      )
+      .optional()
+      .describe("Subset to compute. Default: all."),
+  },
+  async ({ bodyId, metrics }) => computeMetrics(bodyId, metrics)
+);
+
+// ── query_topology ─────────────────────────────────────────────────────────
+server.tool(
+  "query_topology",
+  "Find faces / edges / vertices on a body matching criteria. Returns stable " +
+    "IDs (face[N], edge[N], vertex[N]) usable in measure_distance and other " +
+    "tools. Wraps occtkit query-topology.",
+  {
+    bodyId: z.string(),
+    entity: z.enum(["face", "edge", "vertex"]),
+    filter: z
+      .object({})
+      .passthrough()
+      .optional()
+      .describe(
+        "AND-combined filter. face: surfaceType, minArea, maxArea, normalDirection, normalTolerance. edge: curveType, minLength, maxLength."
+      ),
+    limit: z.number().int().positive().optional(),
+  },
+  async ({ bodyId, entity, filter, limit }) =>
+    queryTopology(bodyId, entity, filter as Record<string, unknown> | undefined, limit)
+);
+
+// ── measure_distance ──────────────────────────────────────────────────────
+server.tool(
+  "measure_distance",
+  "Minimum distance and (optionally) contacts between two scene bodies. Wraps " +
+    "occtkit measure-distance.",
+  {
+    fromBodyId: z.string(),
+    toBodyId: z.string(),
+    fromRef: z
+      .string()
+      .optional()
+      .describe('Sub-entity ref or "point:x,y,z". Omit for whole shape.'),
+    toRef: z.string().optional(),
+    computeContacts: z.boolean().optional(),
+  },
+  async ({ fromBodyId, toBodyId, fromRef, toRef, computeContacts }) =>
+    measureDistance(fromBodyId, toBodyId, fromRef, toRef, computeContacts)
+);
+
+// ── check_thickness ───────────────────────────────────────────────────────
+server.tool(
+  "check_thickness",
+  "Wall-thickness analysis (sheet metal / casting / 3D printing). Reports " +
+    "min/max/mean thickness and flags thin-wall regions. Wraps occtkit check-thickness.",
+  {
+    bodyId: z.string(),
+    minAcceptable: z.number().positive().optional(),
+    samplingDensity: z.enum(["coarse", "medium", "fine"]).optional(),
+  },
+  async ({ bodyId, minAcceptable, samplingDensity }) =>
+    checkThickness(bodyId, minAcceptable, samplingDensity)
+);
+
+// ── analyze_clearance ─────────────────────────────────────────────────────
+server.tool(
+  "analyze_clearance",
+  "Pairwise interference / minimum-clearance check between 2+ bodies. Wraps " +
+    "occtkit analyze-clearance.",
+  {
+    bodyIds: z.array(z.string()).min(2),
+    minClearance: z.number().nonnegative().optional(),
+    computeContacts: z.boolean().optional(),
+    maxContacts: z.number().int().positive().optional(),
+  },
+  async ({ bodyIds, minClearance, computeContacts, maxContacts }) =>
+    analyzeClearance(bodyIds, minClearance, computeContacts, maxContacts)
+);
+
+// ── generate_mesh ─────────────────────────────────────────────────────────
+server.tool(
+  "generate_mesh",
+  "Tessellate a scene body into a triangle mesh. Returns triangle/vertex " +
+    "counts + quality metrics; optionally inline geometry or written to a " +
+    "mesh file (.stl / .obj). Wraps occtkit mesh.",
+  {
+    bodyId: z.string(),
+    linearDeflection: z.number().positive().optional(),
+    angularDeflection: z.number().positive().optional(),
+    parallel: z.boolean().optional(),
+    returnGeometry: z
+      .boolean()
+      .optional()
+      .describe("Inline triangle data in the response."),
+    outputPath: z
+      .string()
+      .optional()
+      .describe("If set, write mesh to this file (.stl / .obj)."),
+  },
+  async ({ bodyId, linearDeflection, angularDeflection, parallel, returnGeometry, outputPath }) =>
+    generateMesh(bodyId, linearDeflection, angularDeflection, parallel, returnGeometry, outputPath)
+);
+
+// ── transform_body ────────────────────────────────────────────────────────
+server.tool(
+  "transform_body",
+  "Apply translate / rotate / uniform-scale to a scene body. Without " +
+    "outputBodyId, replaces the body in place. With outputBodyId, adds a new " +
+    "body. Wraps occtkit transform.",
+  {
+    bodyId: z.string(),
+    translate: z.array(z.number()).length(3).optional(),
+    rotateAxisAngle: z
+      .array(z.number())
+      .length(4)
+      .optional()
+      .describe("[axisX, axisY, axisZ, radians]"),
+    rotateEulerXyz: z.array(z.number()).length(3).optional(),
+    scale: z.number().optional().describe("Uniform scale factor."),
+    inPlace: z.boolean().optional(),
+    outputBodyId: z.string().optional(),
+  },
+  async ({ bodyId, translate, rotateAxisAngle, rotateEulerXyz, scale, inPlace, outputBodyId }) =>
+    transformBody(bodyId, translate, rotateAxisAngle, rotateEulerXyz, scale, inPlace, outputBodyId)
+);
+
+// ── boolean_op ────────────────────────────────────────────────────────────
+server.tool(
+  "boolean_op",
+  "Boolean op (union / subtract / intersect / split) between two scene " +
+    "bodies. Output is added as a new body. Wraps occtkit boolean.",
+  {
+    op: z.enum(["union", "subtract", "intersect", "split"]),
+    aBodyId: z.string(),
+    bBodyId: z.string(),
+    outputBodyId: z
+      .string()
+      .optional()
+      .describe("Defaults to '<op>-<a>-<b>'."),
+    removeInputs: z.boolean().optional(),
+  },
+  async ({ op, aBodyId, bBodyId, outputBodyId, removeInputs }) =>
+    booleanOp(op, aBodyId, bBodyId, outputBodyId, removeInputs)
+);
+
+// ── mirror_or_pattern ─────────────────────────────────────────────────────
+server.tool(
+  "mirror_or_pattern",
+  "Mirror / linear / circular pattern of a body. Output is N new bodies in " +
+    "the scene. Wraps occtkit pattern.",
+  {
+    bodyId: z.string(),
+    kind: z.enum(["mirror", "linear", "circular"]),
+    params: z
+      .object({
+        plane: z.string().optional().describe("mirror: 'xy'|'yz'|'zx'"),
+        planeOrigin: z.array(z.number()).length(3).optional(),
+        planeNormal: z.array(z.number()).length(3).optional(),
+        direction: z.array(z.number()).length(3).optional().describe("linear"),
+        spacing: z.number().optional().describe("linear"),
+        count: z.number().int().positive().optional().describe("linear"),
+        axisOrigin: z.array(z.number()).length(3).optional().describe("circular"),
+        axisDirection: z.array(z.number()).length(3).optional().describe("circular"),
+        totalCount: z.number().int().positive().optional().describe("circular"),
+        totalAngle: z.number().optional().describe("circular (radians)"),
+      })
+      .passthrough(),
+    outputBodyIdPrefix: z.string().optional(),
+  },
+  async ({ bodyId, kind, params, outputBodyIdPrefix }) =>
+    mirrorOrPattern(bodyId, kind, params, outputBodyIdPrefix)
+);
+
+// ── heal_shape ────────────────────────────────────────────────────────────
+server.tool(
+  "heal_shape",
+  "Heal imported / non-watertight geometry. Returns before/after stats. " +
+    "Wraps occtkit heal.",
+  {
+    bodyId: z.string(),
+    options: z
+      .object({
+        tolerance: z.number().optional(),
+        maxTolerance: z.number().optional(),
+        minTolerance: z.number().optional(),
+        fixSmallEdges: z.boolean().optional(),
+        fixSmallFaces: z.boolean().optional(),
+        fixGaps: z.boolean().optional(),
+        fixSelfIntersection: z.boolean().optional(),
+        fixOrientation: z.boolean().optional(),
+        unifyDomain: z.boolean().optional(),
+      })
+      .optional(),
+    outputBodyId: z
+      .string()
+      .optional()
+      .describe("If set, write a new body. Otherwise heals in place."),
+  },
+  async ({ bodyId, options, outputBodyId }) => healShape(bodyId, options, outputBodyId)
+);
+
+// ── read_brep ─────────────────────────────────────────────────────────────
+server.tool(
+  "read_brep",
+  "Load a .brep from disk into the scene as a new body. Wraps occtkit load-brep.",
+  {
+    inputPath: z.string(),
+    bodyId: z.string().optional(),
+    color: z.string().optional().describe("'#rrggbb' or '#rrggbbaa'."),
+  },
+  async ({ inputPath, bodyId, color }) => readBrep(inputPath, bodyId, color)
+);
+
+// ── import_file ───────────────────────────────────────────────────────────
+server.tool(
+  "import_file",
+  "Multi-format CAD import (STEP / IGES / STL / OBJ) into the scene. Wraps " +
+    "occtkit import.",
+  {
+    inputPath: z.string(),
+    format: z.enum(["auto", "step", "iges", "stl", "obj"]).optional(),
+    idPrefix: z.string().optional(),
+    preserveAssembly: z
+      .boolean()
+      .optional()
+      .describe("STEP only: walk XCAF and emit one body per leaf node."),
+    healOnImport: z.boolean().optional(),
+  },
+  async ({ inputPath, format, idPrefix, preserveAssembly, healOnImport }) =>
+    importFile(inputPath, format, idPrefix, preserveAssembly, healOnImport)
+);
+
+// ── render_preview ────────────────────────────────────────────────────────
+server.tool(
+  "render_preview",
+  "Render a PNG preview of the current scene (or a subset of bodies). Wraps " +
+    "occtkit render-preview.",
+  {
+    outputPath: z.string().describe("Absolute path for the output PNG."),
+    bodyIds: z
+      .array(z.string())
+      .optional()
+      .describe("Restrict to these bodies. Default: all bodies."),
+    options: z
+      .object({
+        camera: z
+          .enum(["iso", "front", "back", "top", "bottom", "left", "right"])
+          .optional(),
+        cameraPosition: z.array(z.number()).length(3).optional(),
+        cameraTarget: z.array(z.number()).length(3).optional(),
+        cameraUp: z.array(z.number()).length(3).optional(),
+        width: z.number().int().positive().optional(),
+        height: z.number().int().positive().optional(),
+        displayMode: z
+          .enum(["shaded", "wireframe", "shaded-with-edges", "flat", "xray", "rendered"])
+          .optional(),
+        background: z.string().optional(),
+      })
+      .optional(),
+  },
+  async ({ outputPath, bodyIds, options }) =>
+    renderPreview(outputPath, bodyIds, options)
+);
+
+// ── inspect_assembly ──────────────────────────────────────────────────────
+server.tool(
+  "inspect_assembly",
+  "Walk an XCAF assembly hierarchy: components, instances, names, colors, " +
+    "materials, transforms. Pass either a scene bodyId (BREP — degenerate " +
+    "response since BREPs carry no XCAF metadata) or an inputPath (STEP / " +
+    "IGES / XBF for the full tree). Wraps occtkit inspect-assembly.",
+  {
+    bodyId: z.string().optional(),
+    inputPath: z
+      .string()
+      .optional()
+      .describe("STEP / IGES / XBF / BREP file path. Mutually exclusive with bodyId."),
+    depth: z.number().int().nonnegative().optional(),
+  },
+  async ({ bodyId, inputPath, depth }) => inspectAssembly(bodyId, inputPath, depth)
+);
+
+// ── set_assembly_metadata ────────────────────────────────────────────────
+server.tool(
+  "set_assembly_metadata",
+  "Modify XCAF document or per-component metadata (title / material / " +
+    "weight / revision / part number / custom attributes). Wraps occtkit " +
+    "set-metadata.",
+  {
+    inputPath: z.string().describe("STEP / IGES / XBF input."),
+    outputPath: z.string().describe("Output XBF (or compatible) path."),
+    scope: z.enum(["document", "component"]).optional(),
+    componentId: z
+      .number()
+      .int()
+      .optional()
+      .describe("XCAF label id (when scope=component)."),
+    metadata: z
+      .object({
+        title: z.string().optional(),
+        drawnBy: z.string().optional(),
+        material: z.string().optional(),
+        weight: z.number().optional(),
+        revision: z.string().optional(),
+        partNumber: z.string().optional(),
+        customAttrs: z.record(z.string(), z.string()).optional(),
+      })
+      .default({}),
+  },
+  async ({ inputPath, outputPath, scope, componentId, metadata }) =>
+    setAssemblyMetadata(inputPath, outputPath, scope, componentId, metadata)
 );
 
 // ── Start ───────────────────────────────────────────────────────────────────
