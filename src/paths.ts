@@ -11,8 +11,11 @@ export function tempScriptPath(): string {
   return join(tmpdir(), `occtmcp-script-${randomUUID()}.swift`);
 }
 
-/** Output directory — prefers iCloud Drive, falls back to local. */
+/** Output directory — env override > iCloud Drive > local fallback. */
 export function outputDir(): string {
+  const override = process.env.OCCTMCP_OUTPUT_DIR;
+  if (override) return override;
+
   const icloud = join(
     homedir(),
     "Library/Mobile Documents/com~apple~CloudDocs/OCCTSwiftScripts/output"

@@ -15,13 +15,87 @@ The LLM has full access to OCCTSwift's 900+ CAD operations: primitives, booleans
 
 ## Tools
 
+35 tools, organized below. Most LLM flows can answer "what's the volume?", "make it red", "boolean-subtract these", "render a preview", "export to STEP", and "draw this" without ever round-tripping through `execute_script` — that's reserved for novel geometry the typed tools don't cover.
+
+### Authoring
+
 | Tool | Purpose |
 |------|---------|
-| `execute_script` | Write & execute Swift CAD code |
-| `get_scene` | Read current scene manifest (bodies, colors, materials) |
-| `get_script` | Read current Swift script source |
-| `export_model` | List exported BREP/STEP file paths |
+| `execute_script` | Write & execute arbitrary Swift CAD code (full OCCTSwift API) |
+| `get_script` | Read the most recent script's source |
 | `get_api_reference` | Browse OCCTSwift API by category |
+
+### Scene reads
+
+| Tool | Purpose |
+|------|---------|
+| `get_scene` | Read current scene manifest (bodies, colors, materials) |
+| `export_model` | List exported BREP / STEP / STL / OBJ file paths |
+| `compare_versions` | Diff current scene vs N runs ago (added / removed / appearance / file changed) |
+
+### Scene mutation
+
+| Tool | Purpose |
+|------|---------|
+| `remove_body` | Delete a body from the scene (manifest + BREP file) |
+| `clear_scene` | Wipe all bodies, optionally keep diff history |
+| `rename_body` | Change a body's id |
+| `set_appearance` | Update color / opacity / roughness / metallic / display name |
+
+### Introspection
+
+| Tool | Purpose |
+|------|---------|
+| `validate_geometry` | Per-body topology validation (isValid, error counts) |
+| `compute_metrics` | Volume, area, centroid, bounding box, principal axes |
+| `query_topology` | Find faces / edges / vertices matching criteria, return stable IDs |
+| `measure_distance` | Min distance + contacts between two bodies |
+| `recognize_features` | Pockets and holes via AAG heuristics |
+| `inspect_assembly` | Walk an XCAF assembly tree (STEP / IGES / XBF) |
+
+### Construction
+
+| Tool | Purpose |
+|------|---------|
+| `apply_feature` | Drill / fillet / chamfer / extrude / revolve / thread / boolean (FeatureSpec) |
+| `transform_body` | Translate / rotate / uniform-scale (in place or new body) |
+| `boolean_op` | Union / subtract / intersect / split between two bodies |
+| `mirror_or_pattern` | Mirror / linear / circular pattern → N new bodies |
+
+### Engineering analysis
+
+| Tool | Purpose |
+|------|---------|
+| `check_thickness` | Wall-thickness analysis with thin-region flags |
+| `analyze_clearance` | Pairwise interference / minimum clearance |
+| `heal_shape` | Heal imported / non-watertight geometry; before/after stats |
+
+### I/O
+
+| Tool | Purpose |
+|------|---------|
+| `read_brep` | Load a `.brep` from disk into the scene |
+| `import_file` | Multi-format import (STEP / IGES / STL / OBJ); optional XCAF assembly |
+| `export_scene` | Export to STEP / IGES / BREP / STL / OBJ / glTF / GLB |
+| `set_assembly_metadata` | Modify XCAF document or per-component metadata |
+
+### Mesh & visualisation
+
+| Tool | Purpose |
+|------|---------|
+| `generate_mesh` | Tessellate to triangles + quality metrics |
+| `render_preview` | One-shot PNG render |
+| `generate_drawing` | Multi-view ISO 128-30 DXF technical drawing |
+
+### Topology graph (low-level)
+
+| Tool | Purpose |
+|------|---------|
+| `graph_validate` | Validate a BREP's topology graph (raw path) |
+| `graph_compact` | Drop unreferenced graph nodes; write rebuilt BREP |
+| `graph_dedup` | Deduplicate shared surface / curve geometry |
+| `graph_ml` | Export topology + UV/edge samples as ML-friendly JSON |
+| `feature_recognize` | Pockets + holes (raw BREP path; `recognize_features` is the scene-aware wrapper) |
 
 ## Prerequisites
 

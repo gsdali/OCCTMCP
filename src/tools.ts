@@ -11,6 +11,7 @@ import {
   serveDisabled,
   type ServeEnvelope,
 } from "./occtkit-serve.js";
+import { snapshotScene } from "./scene-tools.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -57,6 +58,7 @@ export async function executeScript(
   code: string,
   description?: string
 ): Promise<ToolResult> {
+  await snapshotScene();
   const scriptPath = tempScriptPath();
   await writeFile(scriptPath, code, "utf-8");
   lastScriptCode = code;
