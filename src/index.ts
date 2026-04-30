@@ -41,12 +41,19 @@ import {
   renderPreview,
   inspectAssembly,
   setAssemblyMetadata,
+  simplifyMesh,
 } from "./verb-tools.js";
 
-const server = new McpServer({
-  name: "occtmcp",
-  version: "0.1.0",
-});
+export function createServer(): McpServer {
+  const server = new McpServer({
+    name: "occtmcp",
+    version: "0.1.0",
+  });
+  registerTools(server);
+  return server;
+}
+
+function registerTools(server: McpServer): void {
 
 // ── execute_script ──────────────────────────────────────────────────────────
 // The core tool: write Swift CAD code, compile & run it via OCCTSwiftScripts.
@@ -115,8 +122,10 @@ server.tool(
 // Quick reference for the OCCTSwift API surface.
 server.tool(
   "get_api_reference",
-  "Get a reference guide for OCCTSwift API operations. " +
-    "Use this to look up available methods before writing a script.",
+  "Get a reference guide for OCCTSwift API operations, OR a catalog of every " +
+    "MCP tool this server exposes (category=mcp_tools). " +
+    "Use this to look up available methods before writing a script, or to " +
+    "discover what tools you can call directly without writing Swift.",
   {
     category: z
       .enum([
@@ -134,13 +143,51 @@ server.tool(
         "topology_graph",
         "topology_graph_builder",
         "all",
+        "mcp_tools",
       ])
-      .describe("API category to look up"),
+      .describe("API category to look up. Use 'mcp_tools' for the MCP tool catalog."),
   },
   async ({ category }) => {
+    if (category === "mcp_tools") return mcpToolsCatalog();
     return getApiReference(category);
   }
 );
+
+function mcpToolsCatalog() {
+  // Walk the McpServer's private tool registry. Shape per RegisteredTool in
+  // @modelcontextprotocol/sdk: { description, inputSchema (zod), ... }.
+  const reg = (server as unknown as {
+    _registeredTools: Record<string, {
+      description?: string;
+      inputSchema?: unknown;
+      enabled: boolean;
+    }>;
+  })._registeredTools;
+
+  const entries = Object.entries(reg)
+    .filter(([, t]) => t.enabled)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, t]) => {
+      let inputSchema: unknown = {};
+      if (t.inputSchema) {
+        try {
+          inputSchema = z.toJSONSchema(t.inputSchema as z.ZodType);
+        } catch {
+          inputSchema = { _note: "schema introspection failed" };
+        }
+      }
+      return { name, description: t.description ?? "", inputSchema };
+    });
+
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify({ tools: entries, count: entries.length }, null, 2),
+      },
+    ],
+  };
+}
 
 // ── graph_validate ──────────────────────────────────────────────────────────
 // Run BRepGraph validation on a BREP file and return the report JSON.
@@ -678,6 +725,42 @@ server.tool(
     renderPreview(outputPath, bodyIds, options)
 );
 
+// ── simplify_mesh ─────────────────────────────────────────────────────────
+server.tool(
+  "simplify_mesh",
+  "Decimate a body's mesh to a target triangle count via QEM " +
+    "(meshoptimizer, vendored in OCCTSwiftMesh). Outputs an .stl or .obj " +
+    "file plus before/after counts and Hausdorff distance. Wraps " +
+    "occtkit simplify-mesh.",
+  {
+    bodyId: z.string(),
+    outputPath: z.string().describe("Output mesh path (.stl or .obj)."),
+    targetTriangleCount: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("Target triangle count. Mutually exclusive with targetReduction."),
+    targetReduction: z
+      .number()
+      .gt(0)
+      .lt(1)
+      .optional()
+      .describe("Fraction to remove (e.g. 0.9 = 90% reduction). Mutually exclusive with targetTriangleCount."),
+    preserveBoundary: z.boolean().optional().describe("Default true."),
+    preserveTopology: z.boolean().optional().describe("Default true."),
+    maxHausdorffDistance: z
+      .number()
+      .positive()
+      .optional()
+      .describe("Cap deviation from the input mesh (in input units)."),
+    linearDeflection: z.number().positive().optional().describe("Tessellation deflection. Default 0.1."),
+    angularDeflection: z.number().positive().optional().describe("Default 0.5 rad."),
+  },
+  async ({ bodyId, outputPath, ...options }) =>
+    simplifyMesh(bodyId, outputPath, options)
+);
+
 // ── inspect_assembly ──────────────────────────────────────────────────────
 server.tool(
   "inspect_assembly",
@@ -727,6 +810,15 @@ server.tool(
     setAssemblyMetadata(inputPath, outputPath, scope, componentId, metadata)
 );
 
-// ── Start ───────────────────────────────────────────────────────────────────
-const transport = new StdioServerTransport();
-await server.connect(transport);
+}
+
+// ── Start (skipped during in-process imports such as tests) ──────────────────
+const isMain =
+  import.meta.url === `file://${process.argv[1]}` ||
+  import.meta.url.endsWith(process.argv[1]?.replace(/^.*?\/dist\//, "/dist/") ?? "");
+
+if (isMain) {
+  const server = createServer();
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}

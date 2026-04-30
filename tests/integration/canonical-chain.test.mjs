@@ -12,14 +12,13 @@
  * Tools exercised: validate_geometry, recognize_features, compute_metrics,
  * query_topology, transform_body, measure_distance, analyze_clearance,
  * boolean_op, mirror_or_pattern, heal_shape, check_thickness,
- * generate_mesh, render_preview, export_scene, inspect_assembly,
- * remove_body, clear_scene, compare_versions.
+ * generate_mesh, simplify_mesh, render_preview, export_scene,
+ * inspect_assembly, apply_feature, generate_drawing, remove_body,
+ * clear_scene, compare_versions.
  *
- * Tools NOT exercised here (need carefully constructed schemas — separate
- * tests): apply_feature (FeatureSpec), generate_drawing (DrawingSpec),
- * read_brep (covered indirectly via export_scene + import_file would be
- * the natural pair), import_file (would clobber if mis-pointed; covered
- * once we have a fixture STEP), set_assembly_metadata.
+ * Tools NOT exercised here: read_brep / import_file (would clobber if
+ * mis-pointed; covered once we have a fixture STEP), set_assembly_metadata
+ * (writes XBF; covered once we have a multi-component fixture).
  */
 
 import { describe, it, before, after } from "node:test";
@@ -96,12 +95,14 @@ function parseJSON(toolResult) {
 }
 
 function trailingJSON(toolResult) {
-  // Tools that prefix with a human-readable line then dump JSON. Find the
-  // first '{' and parse from there.
+  // Tools that prefix with a human-readable line then dump multi-line JSON.
+  // Match the last "\n{" (the start of a top-level block) — the preamble
+  // may itself embed inline JSON like `{"kind":"fillet"}`, so first-{
+  // doesn't cut it.
   const t = toolResult.content[0].text;
-  const i = t.indexOf("{");
-  assert.ok(i >= 0, `no JSON found in tool output:\n${t}`);
-  return JSON.parse(t.slice(i));
+  const i = t.lastIndexOf("\n{");
+  assert.ok(i >= 0, `no trailing JSON block found in tool output:\n${t}`);
+  return JSON.parse(t.slice(i + 1));
 }
 
 describe("canonical chain", () => {
@@ -202,6 +203,47 @@ describe("canonical chain", () => {
     assert.ok(data.triangleCount > 0);
     assert.ok(data.vertexCount > 0);
     assert.ok(data.quality);
+  });
+
+  it("simplify_mesh decimates to a target triangle count", async () => {
+    const stl = join(SCENE_DIR, "simplified.stl");
+    const r = await verb.simplifyMesh("cyl", stl, { targetTriangleCount: 40 });
+    const data = parseJSON(r);
+    assert.ok(data.beforeTriangleCount > data.afterTriangleCount);
+    assert.equal(data.afterTriangleCount, 40);
+    assert.ok(data.qualityDelta);
+    assert.ok(typeof data.qualityDelta.hausdorffDistance === "number");
+    assert.ok(existsSync(stl));
+    assert.ok(statSync(stl).size > 0);
+  });
+
+  it("apply_feature applies a fillet to all edges (in-place)", async () => {
+    const r = await api.applyFeature("cyl", { kind: "fillet", id: "f1", radius: 0.5 });
+    const text = r.content[0].text;
+    assert.match(text, /Applied feature/);
+    // The reconstruct verb returns shape: <path>, fulfilled: [...], skipped: [...]
+    const data = trailingJSON(r);
+    assert.ok(data.shape, "reconstruct should produce a shape path");
+    assert.ok(Array.isArray(data.fulfilled));
+    assert.ok(data.fulfilled.includes("f1"), `f1 should be fulfilled, got: ${JSON.stringify(data.fulfilled)}`);
+  });
+
+  it("generate_drawing produces a DXF for the cylinder", async () => {
+    const dxf = join(SCENE_DIR, "drawing.dxf");
+    const spec = {
+      sheet: { size: "a4", orientation: "landscape", projection: "third", scale: "auto" },
+      views: [
+        { name: "front", direction: [0, -1, 0] },
+        { name: "top", direction: [0, 0, -1] },
+      ],
+    };
+    const r = await api.generateDrawing("cyl", dxf, spec);
+    const text = r.content[0].text;
+    assert.match(text, /Drawing exported/);
+    assert.ok(existsSync(dxf));
+    assert.ok(statSync(dxf).size > 0);
+    const data = trailingJSON(r);
+    assert.equal(data.viewCount, 2);
   });
 
   it("render_preview writes a non-empty PNG", async () => {
