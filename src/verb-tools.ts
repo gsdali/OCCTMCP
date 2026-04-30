@@ -235,6 +235,55 @@ export async function generateMesh(
   return passthroughResult("mesh", await runVerbJSON("mesh", req, 240_000));
 }
 
+// ── simplify_mesh ──────────────────────────────────────────────────────────
+
+export async function simplifyMesh(
+  bodyId: string,
+  outputPath: string,
+  options: {
+    targetTriangleCount?: number;
+    targetReduction?: number;
+    preserveBoundary?: boolean;
+    preserveTopology?: boolean;
+    maxHausdorffDistance?: number;
+    linearDeflection?: number;
+    angularDeflection?: number;
+  }
+): Promise<ToolResult> {
+  if (
+    options.targetTriangleCount === undefined &&
+    options.targetReduction === undefined
+  ) {
+    return text(
+      "simplify_mesh requires exactly one of targetTriangleCount or targetReduction."
+    );
+  }
+  if (
+    options.targetTriangleCount !== undefined &&
+    options.targetReduction !== undefined
+  ) {
+    return text(
+      "simplify_mesh: pass exactly one of targetTriangleCount or targetReduction, not both."
+    );
+  }
+  const ext = outputPath.toLowerCase();
+  if (!ext.endsWith(".stl") && !ext.endsWith(".obj")) {
+    return text(`simplify_mesh: outputPath must end in .stl or .obj (got ${outputPath}).`);
+  }
+
+  const m = await readManifest();
+  if (!m) return text("No scene loaded. Run execute_script first.");
+  const body = findBody(m, bodyId);
+  if (!body) return text(`Body not found: ${bodyId}`);
+
+  const req: Record<string, unknown> = {
+    inputBrep: bodyPath(body),
+    outputPath,
+    ...options,
+  };
+  return passthroughResult("simplify-mesh", await runVerbJSON("simplify-mesh", req, 240_000));
+}
+
 // ── transform_body ─────────────────────────────────────────────────────────
 
 export async function transformBody(

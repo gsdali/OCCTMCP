@@ -15,7 +15,7 @@ The LLM has full access to OCCTSwift's 900+ CAD operations: primitives, booleans
 
 ## Tools
 
-35 tools, organized below. Most LLM flows can answer "what's the volume?", "make it red", "boolean-subtract these", "render a preview", "export to STEP", and "draw this" without ever round-tripping through `execute_script` — that's reserved for novel geometry the typed tools don't cover.
+36 tools, organized below. Call `get_api_reference({ category: "mcp_tools" })` to dump every tool's JSON Schema in one shot — useful for LLM auto-discovery. Most LLM flows can answer "what's the volume?", "make it red", "boolean-subtract these", "render a preview", "export to STEP", and "draw this" without ever round-tripping through `execute_script` — that's reserved for novel geometry the typed tools don't cover.
 
 ### Authoring
 
@@ -84,6 +84,7 @@ The LLM has full access to OCCTSwift's 900+ CAD operations: primitives, booleans
 | Tool | Purpose |
 |------|---------|
 | `generate_mesh` | Tessellate to triangles + quality metrics |
+| `simplify_mesh` | QEM mesh decimation to .stl/.obj — wraps OCCTSwiftMesh's `Mesh.simplified` (vendored meshoptimizer) |
 | `render_preview` | One-shot PNG render |
 | `generate_drawing` | Multi-view ISO 128-30 DXF technical drawing |
 

@@ -25,7 +25,7 @@ Tests under `tests/unit/` exercise the pure-TS scene-mutation code against a tem
 
 The server is a single-process Node.js app (ESM, strict TypeScript):
 
-- `src/index.ts` — Creates `McpServer`, registers every tool with zod schemas, connects stdio transport
+- `src/index.ts` — Exports `createServer()` factory (which registers every tool with zod schemas) and connects stdio transport when run directly. Tests import `createServer()` to introspect the tool registry without binding stdio. The `get_api_reference` tool's `mcp_tools` category dumps the live registry as JSON Schema for LLM auto-discovery
 - `src/tools.ts` — Core tool implementations (`execute_script`, `get_scene`, `get_script`, `export_model`, `get_api_reference`): writes Swift code to a tempfile, sends it to a long-lived `occtkit run --serve` child by default, falls back to one-shot `occtkit run <path>` if serve mode is unavailable. `executeScript` calls `snapshotScene()` before running so `compare_versions` has history
 - `src/scene-tools.ts` — Pure-TS scene-mutation tools (`remove_body`, `clear_scene`, `rename_body`, `set_appearance`, `compare_versions`, `export_scene`). Read/modify/write `manifest.json` directly; OCCTSwiftViewport's ScriptWatcher reloads on the write. `export_scene` is the exception: it generates a one-shot Swift script that loads the bodies' BREPs and calls `Exporter.writeXxx`, run via `occtkit run`. Maintains an in-memory ring buffer of the last 10 manifest snapshots for `compare_versions`
 - `src/api-tools.ts` — Thin wrappers around existing occtkit verbs (`validate_geometry` → `graph-validate`, `recognize_features` → `feature-recognize`, `apply_feature` → `reconstruct`, `generate_drawing` → `drawing-export`). Each resolves a `bodyId` against the scene manifest, passes the BREP path to the verb, returns the verb's JSON output
@@ -98,6 +98,7 @@ The 2 min timeout is per-request in both paths. On serve-mode timeout the child 
 | `heal_shape` | Heal imported / non-watertight geometry — wraps `occtkit heal` |
 | `read_brep` | Add a `.brep` from disk to the scene — wraps `occtkit load-brep` (staged + merged) |
 | `import_file` | STEP / IGES / STL / OBJ import — wraps `occtkit import` (staged + merged) |
+| `simplify_mesh` | QEM mesh decimation to .stl/.obj — wraps `occtkit simplify-mesh` (which wraps OCCTSwiftMesh's `Mesh.simplified`, vendoring meshoptimizer) |
 | `render_preview` | One-shot PNG render of the scene — wraps `occtkit render-preview` |
 | `inspect_assembly` | Walk an XCAF assembly tree — wraps `occtkit inspect-assembly` |
 | `set_assembly_metadata` | Modify XCAF document or per-component metadata — wraps `occtkit set-metadata` |
@@ -106,7 +107,7 @@ The five graph/feature tools (`graph_*`, `feature_recognize`) are thin one-shot 
 
 The scene-mutation tools (`remove_body`, `clear_scene`, `rename_body`, `set_appearance`, `compare_versions`) are pure manifest manipulation — they don't shell out to occtkit at all. `export_scene` is the exception: it generates a small templated Swift program that loads the relevant BREPs and calls `Exporter.writeXxx`, run via `occtkit run` (one-shot, not serve). The `validate_geometry` / `recognize_features` / `apply_feature` / `generate_drawing` tools resolve a `bodyId` against the manifest and delegate to the corresponding occtkit verb.
 
-Only one tool from [#6](https://github.com/gsdali/OCCTMCP/issues/6) remains unbuilt: `simplify_mesh`, blocked on the `occtkit simplify-mesh` verb in OCCTSwiftScripts#22. The decimation algorithm is ready in [OCCTSwiftMesh v0.1.0](https://github.com/gsdali/OCCTSwiftMesh/releases/tag/v0.1.0) (QEM via vendored meshoptimizer); the verb just needs wiring. Once the verb lands, the MCP wrapper is a thin pass-through — same pattern as `generate_mesh`.
+All 26 tools from [#6](https://github.com/gsdali/OCCTMCP/issues/6) are built. Mesh-domain algorithms beyond decimation live in [OCCTSwiftMesh](https://github.com/gsdali/OCCTSwiftMesh) (sibling to OCCTSwift, vendors permissive implementations because OCCT-Open ships only mesh generation, not post-processing). As more verbs land in OCCTSwiftMesh → OCCTSwiftScripts (smoothing, repair, remeshing, subdivision per the OCCTSwiftMesh roadmap), wire them as additional MCP tools using the same `runVerbJSON` pattern.
 
 ## Script Template
 
