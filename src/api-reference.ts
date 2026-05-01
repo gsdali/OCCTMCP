@@ -1904,7 +1904,6 @@ TopologyGraph.productComponentCount(_ productIndex: Int) -> Int
 TopologyGraph.productShapeRoot(_ productIndex: Int) -> (kind: NodeKind, index: Int)?
 TopologyGraph.occurrenceProduct(_ occIndex: Int) -> Int
 TopologyGraph.occurrenceParentProduct(_ occIndex: Int) -> Int
-TopologyGraph.occurrenceParentOccurrence(_ occIndex: Int) -> Int?
 TopologyGraph.productCount -> Int
 TopologyGraph.occurrenceCount -> Int
 TopologyGraph.rootProductCount -> Int
@@ -1998,7 +1997,7 @@ TopologyGraph.compSolidCount -> Int
 
 Build a graph-based B-Rep topology from any Shape for fast adjacency queries, analysis, ML export, and geometry sampling. Construct with TopologyGraph(shape:parallel:).`,
 
-  topology_graph_builder: `# TopologyGraph Builder (Mutations)
+  topology_graph_builder: `# TopologyGraph Builder / EditorView (Mutations)
 
 ## Copy and Transform
 TopologyGraph.copy(copyGeometry: Bool = true) -> TopologyGraph?
@@ -2044,7 +2043,158 @@ TopologyGraph.clearEdgePolygon3D(edgeIndex: Int)
 ## Builder: Validate Mutation
 TopologyGraph.validateMutation() -> Bool
 
-Mutate topology programmatically. Use beginDeferredInvalidation/endDeferredInvalidation around batch mutations.`,
+## EditorView Field Setters
+TopologyGraph.setVertexPoint(_ vertexIndex: Int, x: Double, y: Double, z: Double)
+TopologyGraph.setVertexTolerance(_ vertexIndex: Int, tolerance: Double)
+TopologyGraph.setEdgeTolerance(_ edgeIndex: Int, tolerance: Double)
+TopologyGraph.setEdgeParamRange(_ edgeIndex: Int, first: Double, last: Double)
+TopologyGraph.setEdgeSameParameter(_ edgeIndex: Int, sameParameter: Bool)
+TopologyGraph.setEdgeSameRange(_ edgeIndex: Int, sameRange: Bool)
+TopologyGraph.setEdgeDegenerate(_ edgeIndex: Int, degenerate: Bool)
+TopologyGraph.setEdgeIsClosed(_ edgeIndex: Int, isClosed: Bool)
+TopologyGraph.setCoEdgeParamRange(_ coedgeIndex: Int, first: Double, last: Double)
+TopologyGraph.setCoEdgeOrientation(_ coedgeIndex: Int, orientation: Int)
+TopologyGraph.setWireIsClosed(_ wireIndex: Int, isClosed: Bool)
+TopologyGraph.setFaceTolerance(_ faceIndex: Int, tolerance: Double)
+TopologyGraph.setFaceNaturalRestriction(_ faceIndex: Int, naturalRestriction: Bool)
+TopologyGraph.setShellIsClosed(_ shellIndex: Int, isClosed: Bool)
+
+## EditorView Add operations
+TopologyGraph.edgeAddInternalVertex(_ edgeIndex: Int, vertexIndex: Int, orientation: Int = 2) -> Int?
+TopologyGraph.faceAddVertex(_ faceIndex: Int, vertexIndex: Int, orientation: Int = 0) -> Int?
+TopologyGraph.shellAddChild(_ shellIndex: Int, childKind: Int, childIndex: Int, orientation: Int = 0) -> Int?
+TopologyGraph.solidAddChild(_ solidIndex: Int, childKind: Int, childIndex: Int, orientation: Int = 0) -> Int?
+TopologyGraph.compoundAddChild(_ compoundIndex: Int, childKind: Int, childIndex: Int, orientation: Int = 0) -> Int?
+TopologyGraph.compSolidAddSolid(_ compSolidIndex: Int, solidIndex: Int, orientation: Int = 0) -> Int?
+
+## EditorView Remove operations
+TopologyGraph.edgeRemoveVertex(_ edgeIndex: Int, vertexRefIndex: Int) -> Bool
+TopologyGraph.edgeReplaceVertex(_ edgeIndex: Int, oldVertexRefIndex: Int, newVertexIndex: Int) -> Int?
+TopologyGraph.wireRemoveCoEdge(_ wireIndex: Int, coedgeRefIndex: Int) -> Bool
+TopologyGraph.faceRemoveVertex(_ faceIndex: Int, vertexRefIndex: Int) -> Bool
+TopologyGraph.faceRemoveWire(_ faceIndex: Int, wireRefIndex: Int) -> Bool
+TopologyGraph.shellRemoveFace(_ shellIndex: Int, faceRefIndex: Int) -> Bool
+TopologyGraph.shellRemoveChild(_ shellIndex: Int, childRefIndex: Int) -> Bool
+TopologyGraph.solidRemoveShell(_ solidIndex: Int, shellRefIndex: Int) -> Bool
+TopologyGraph.solidRemoveChild(_ solidIndex: Int, childRefIndex: Int) -> Bool
+TopologyGraph.compoundRemoveChild(_ compoundIndex: Int, childRefIndex: Int) -> Bool
+TopologyGraph.compSolidRemoveSolid(_ compSolidIndex: Int, solidRefIndex: Int) -> Bool
+TopologyGraph.removeRep(repKind: Int, repIndex: Int)
+
+## EditorView Ref setters
+TopologyGraph.setVertexRefOrientation(_ vertexRefIndex: Int, orientation: Int)
+TopologyGraph.setVertexRefVertexDefId(_ vertexRefIndex: Int, vertexIndex: Int)
+TopologyGraph.setEdgeStartVertexRefId(_ edgeIndex: Int, vertexRefIndex: Int)
+TopologyGraph.setEdgeEndVertexRefId(_ edgeIndex: Int, vertexRefIndex: Int)
+TopologyGraph.setEdgeCurve3DRepId(_ edgeIndex: Int, curve3DRepId: Int)
+TopologyGraph.setEdgePolygon3DRepId(_ edgeIndex: Int, polygon3DRepId: Int)
+TopologyGraph.setCoEdgeRefCoEdgeDefId(_ coedgeRefIndex: Int, coedgeIndex: Int)
+TopologyGraph.setCoEdgeEdgeDefId(_ coedgeIndex: Int, edgeIndex: Int)
+TopologyGraph.setCoEdgeFaceDefId(_ coedgeIndex: Int, faceIndex: Int)
+TopologyGraph.setCoEdgeCurve2DRepId(_ coedgeIndex: Int, curve2DRepId: Int)
+TopologyGraph.setCoEdgePolygon2DRepId(_ coedgeIndex: Int, polygon2DRepId: Int)
+TopologyGraph.setCoEdgePolygonOnTriRepId(_ coedgeIndex: Int, polygonOnTriRepId: Int)
+TopologyGraph.clearCoEdgePCurveBinding(_ coedgeIndex: Int)
+TopologyGraph.setWireRefIsOuter(_ wireRefIndex: Int, isOuter: Bool)
+TopologyGraph.setWireRefOrientation(_ wireRefIndex: Int, orientation: Int)
+TopologyGraph.setWireRefWireDefId(_ wireRefIndex: Int, wireIndex: Int)
+TopologyGraph.setFaceSurfaceRepId(_ faceIndex: Int, surfaceRepId: Int)
+TopologyGraph.setFaceRefOrientation(_ faceRefIndex: Int, orientation: Int)
+TopologyGraph.setFaceRefFaceDefId(_ faceRefIndex: Int, faceIndex: Int)
+TopologyGraph.setShellRefOrientation(_ shellRefIndex: Int, orientation: Int)
+TopologyGraph.setShellRefShellDefId(_ shellRefIndex: Int, shellIndex: Int)
+TopologyGraph.setSolidRefOrientation(_ solidRefIndex: Int, orientation: Int)
+TopologyGraph.setSolidRefSolidDefId(_ solidRefIndex: Int, solidIndex: Int)
+TopologyGraph.setOccurrenceChildDefId(_ occurrenceIndex: Int, childKind: Int, childIndex: Int)
+TopologyGraph.setOccurrenceRefOccurrenceDefId(_ occurrenceRefIndex: Int, occurrenceIndex: Int)
+TopologyGraph.setChildRefOrientation(_ childRefIndex: Int, orientation: Int)
+TopologyGraph.setChildRefChildDefId(_ childRefIndex: Int, childKind: Int, childIndex: Int)
+
+## EditorView geometric setters & PCurve API
+TopologyGraph.setCoEdgeUVBox(_ coedgeIndex: Int, u1: Double, v1: Double, u2: Double, v2: Double)
+TopologyGraph.setCoEdgeContinuity(_ coedgeIndex: Int, continuity: Int)
+TopologyGraph.setCoEdgeSeamContinuity(_ coedgeIndex: Int, continuity: Int)
+TopologyGraph.setCoEdgeSeamPairId(_ coedgeIndex: Int, seamPairCoedgeIndex: Int)
+TopologyGraph.setFaceTriangulationRep(_ faceIndex: Int, triRepId: Int)
+TopologyGraph.coEdgeCreateCurve2DRep(_ curve2D: Curve2D) -> Int?
+TopologyGraph.coEdgeSetPCurve(_ coedgeIndex: Int, curve2D: Curve2D?)
+TopologyGraph.coEdgeAddPCurve(edgeIndex: Int, faceIndex: Int, curve2D: Curve2D, first: Double, last: Double, orientation: Int = 0)
+TopologyGraph.setVertexRefLocalLocation(_ vertexRefIndex: Int, matrix: [Double])
+TopologyGraph.setCoEdgeRefLocalLocation(_ coedgeRefIndex: Int, matrix: [Double])
+TopologyGraph.setWireRefLocalLocation(_ wireRefIndex: Int, matrix: [Double])
+TopologyGraph.setFaceRefLocalLocation(_ faceRefIndex: Int, matrix: [Double])
+TopologyGraph.setShellRefLocalLocation(_ shellRefIndex: Int, matrix: [Double])
+TopologyGraph.setSolidRefLocalLocation(_ solidRefIndex: Int, matrix: [Double])
+TopologyGraph.setOccurrenceRefLocalLocation(_ occurrenceRefIndex: Int, matrix: [Double])
+TopologyGraph.setChildRefLocalLocation(_ childRefIndex: Int, matrix: [Double])
+TopologyGraph.identityLocationMatrix -> [Double]
+
+## EditorView ProductOps assembly building
+TopologyGraph.linkProductToTopology(shapeRootKind: Int, shapeRootIndex: Int, placement: [Double]? = nil) -> Int?
+TopologyGraph.createEmptyProduct() -> Int?
+TopologyGraph.linkProducts(parentProductIndex: Int, referencedProductIndex: Int, placement: [Double], parentOccurrenceIndex: Int? = nil) -> (occurrenceIndex: Int, occurrenceRefIndex: Int)?
+TopologyGraph.productRemoveOccurrence(_ productIndex: Int, occurrenceRefIndex: Int) -> Bool
+TopologyGraph.productRemoveShapeRoot(_ productIndex: Int) -> Bool
+
+## EditorView RepOps non-guard setters
+TopologyGraph.repSetSurface(_ surfaceRepId: Int, surface: Surface)
+TopologyGraph.repSetCurve3D(_ curve3DRepId: Int, curve: Curve3D)
+TopologyGraph.repSetCurve2D(_ curve2DRepId: Int, curve: Curve2D)
+TopologyGraph.repSetTriangulation(_ triRepId: Int, triangulation: Triangulation)
+TopologyGraph.repSetPolygon3D(_ polyRepId: Int, polygon: Polygon3D)
+TopologyGraph.repSetPolygon2D(_ polyRepId: Int, polygon: Polygon2D)
+TopologyGraph.repSetPolygonOnTri(_ polyRepId: Int, polygon: PolygonOnTriangulation)
+TopologyGraph.repSetPolygonOnTriTriangulationId(_ polyOnTriRepId: Int, triRepId: Int)
+
+Mutate topology programmatically. OCCT 8.0.0 (OCCTSwift v0.158+) replaces the legacy \`BRepGraph_BuilderView\` with \`BRepGraph_EditorView\` — a single mutation surface organised as nested Ops classes (Add / Remove / Ref / Field / RepOps / ProductOps). Use beginDeferredInvalidation/endDeferredInvalidation around batch mutations.`,
+
+  topology_graph_mesh: `# TopologyGraph MeshView + MeshCache + Triangulation
+
+## MeshView (v0.158.0, OCCT 8.0.0 beta1 two-tier mesh storage)
+TopologyGraph.meshFaceActiveTriangulationRepId(_ faceIndex: Int) -> Int?
+TopologyGraph.meshEdgePolygon3DRepId(_ edgeIndex: Int) -> Int?
+TopologyGraph.meshCoEdgeHasMesh(_ coedgeIndex: Int) -> Bool
+TopologyGraph.polygon2DCount -> Int
+TopologyGraph.polygonOnTriCount -> Int
+TopologyGraph.activeTriangulationCount -> Int
+TopologyGraph.activePolygon3DCount -> Int
+TopologyGraph.activePolygon2DCount -> Int
+TopologyGraph.activePolygonOnTriCount -> Int
+
+## MeshCache write API
+TopologyGraph.createTriangulationRep(_ triangulation: Triangulation) -> Int?
+TopologyGraph.createPolygon3DRep(_ polygon: Polygon3D) -> Int?
+TopologyGraph.createPolygonOnTriRep(_ polygon: PolygonOnTriangulation, triRepId: Int) -> Int?
+TopologyGraph.appendCachedTriangulation(faceIndex: Int, triRepId: Int)
+TopologyGraph.setCachedActiveIndex(faceIndex: Int, activeIndex: Int)
+TopologyGraph.setCachedPolygon3D(edgeIndex: Int, polyRepId: Int)
+TopologyGraph.appendCachedPolygonOnTri(coedgeIndex: Int, polyRepId: Int)
+TopologyGraph.setCachedPolygon2D(coedgeIndex: Int, poly2DRepId: Int)
+
+## MeshView cache entry inspection
+TopologyGraph.cachedFaceMeshIsPresent(_ faceIndex: Int) -> Bool
+TopologyGraph.cachedFaceMeshTriRepCount(_ faceIndex: Int) -> Int
+TopologyGraph.cachedFaceMeshActiveIndex(_ faceIndex: Int) -> Int
+TopologyGraph.cachedFaceMeshStoredOwnGen(_ faceIndex: Int) -> UInt32
+TopologyGraph.cachedFaceMeshTriRepId(_ faceIndex: Int, repIndex: Int) -> Int?
+TopologyGraph.cachedEdgeMeshIsPresent(_ edgeIndex: Int) -> Bool
+TopologyGraph.cachedEdgeMeshPolygon3DRepId(_ edgeIndex: Int) -> Int?
+TopologyGraph.cachedEdgeMeshStoredOwnGen(_ edgeIndex: Int) -> UInt32
+TopologyGraph.cachedCoEdgeMeshIsPresent(_ coedgeIndex: Int) -> Bool
+TopologyGraph.cachedCoEdgeMeshPolygon2DRepId(_ coedgeIndex: Int) -> Int?
+TopologyGraph.cachedCoEdgeMeshPolygonOnTriRepCount(_ coedgeIndex: Int) -> Int
+TopologyGraph.cachedCoEdgeMeshPolygonOnTriRepId(_ coedgeIndex: Int, repIndex: Int) -> Int?
+TopologyGraph.cachedCoEdgeMeshStoredOwnGen(_ coedgeIndex: Int) -> UInt32
+
+## Triangulation
+Triangulation.create(nodes: [SIMD3<Double>], triangles: [Int]) -> Triangulation?
+Triangulation.node(at index: Int) -> SIMD3<Double>?
+Triangulation.triangle(at index: Int) -> (Int, Int, Int)?
+Triangulation.nodeCount -> Int
+Triangulation.triangleCount -> Int
+Triangulation.deflection -> Double
+
+Two-tier mesh storage on a topology graph (OCCTSwift v0.158+, OCCT 8.0.0 beta1). MeshView surfaces cached \`Poly_Triangulation\` data for faces / edges; MeshCache lets you populate the cache directly without re-tessellating. The standalone \`Triangulation\` class is the value type these APIs read and write.`,
 
 
   all: "", // built below

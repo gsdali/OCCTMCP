@@ -166,6 +166,10 @@ The `get_api_reference` tool provides documentation for:
 - **surfaces** — plane, cylinder, cone, sphere, extrusion, revolution, plate
 - **analysis** — volume, area, distance, bounds, validation
 - **import_export** — STL, STEP, IGES, BREP, OBJ, PLY
+- **topology_graph** — BREPGraph queries (faces, edges, vertices, history, statistics)
+- **topology_graph_builder** — BREPGraph mutations (legacy `Builder` plus the new `EditorView` ops introduced in OCCT 8.0.0 / OCCTSwift v0.158+)
+- **topology_graph_mesh** — `MeshView` / `MeshCache` two-tier mesh storage on the topology graph (OCCTSwift v0.158+) plus the standalone `Triangulation` value type
+- **mcp_tools** — JSON-Schema dump of every MCP tool this server exposes (for LLM auto-discovery)
 
 ## License
 

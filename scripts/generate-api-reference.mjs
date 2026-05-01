@@ -142,15 +142,31 @@ const CATEGORIES = [
   },
   {
     key: "topology_graph_builder",
-    title: "TopologyGraph Builder (Mutations)",
+    title: "TopologyGraph Builder / EditorView (Mutations)",
     rules: [
       {
         type: "TopologyGraph",
-        markRx: /^Builder|Copy and Transform/,
+        markRx: /^Builder|Copy and Transform|^EditorView/,
       },
     ],
     notes:
-      "Mutate topology programmatically. Use beginDeferredInvalidation/endDeferredInvalidation around batch mutations.",
+      "Mutate topology programmatically. OCCT 8.0.0 (OCCTSwift v0.158+) replaces the legacy `BRepGraph_BuilderView` with `BRepGraph_EditorView` — a single mutation surface organised as nested Ops classes (Add / Remove / Ref / Field / RepOps / ProductOps). Use beginDeferredInvalidation/endDeferredInvalidation around batch mutations.",
+  },
+  {
+    key: "topology_graph_mesh",
+    title: "TopologyGraph MeshView + MeshCache + Triangulation",
+    rules: [
+      {
+        type: "TopologyGraph",
+        markRx: /^MeshView|^MeshCache/,
+      },
+      {
+        type: "Triangulation",
+        markRx: null,
+      },
+    ],
+    notes:
+      "Two-tier mesh storage on a topology graph (OCCTSwift v0.158+, OCCT 8.0.0 beta1). MeshView surfaces cached `Poly_Triangulation` data for faces / edges; MeshCache lets you populate the cache directly without re-tessellating. The standalone `Triangulation` class is the value type these APIs read and write.",
   },
 ];
 

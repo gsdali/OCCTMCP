@@ -59,7 +59,7 @@ The 2 min timeout is per-request in both paths. On serve-mode timeout the child 
   - `make install` from the OCCTSwiftScripts repo puts `occtkit` on `$PATH` (preferred — fastest invocation, no sibling-repo path dependency).
   - Clone OCCTSwiftScripts to `~/Projects/OCCTSwiftScripts` so `swift run -c release occtkit` works as the fallback (slower per-call than the binary, but no install step).
   - Older OCCTSwiftScripts (without #5's framing) still works in one-shot fallback mode, just without the serve-mode amortisation. The serve client auto-detects the missing `ok` field on the first envelope and disables serve for the session.
-- **OCCTSwift** — Swift wrapper around OpenCASCADE; transitive dep of OCCTSwiftScripts. Required at `~/Projects/OCCTSwift/` only when regenerating `src/api-reference.ts` via `scripts/generate-api-reference.mjs` (runs as `npm run prebuild`).
+- **OCCTSwift** — Swift wrapper around OpenCASCADE; transitive dep of OCCTSwiftScripts. Required at `~/Projects/OCCTSwift/` only when regenerating `src/api-reference.ts` via `scripts/generate-api-reference.mjs` (runs as `npm run prebuild`). OCCTSwift v0.158+ pins to OCCT 8.0.0 (beta1 from v0.157.0, GA from v1.0.0) and replaces the legacy `BRepGraph_BuilderView` with `BRepGraph_EditorView` — surfaced in the `topology_graph_builder` and `topology_graph_mesh` get_api_reference categories.
 - **OCCTSwiftViewport** — Metal viewport that watches the output directory via `ScriptWatcher` and auto-reloads. Optional but expected if you want the live preview.
 
 ## MCP Tools
