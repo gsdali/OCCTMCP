@@ -142,6 +142,7 @@ server.tool(
         "import_export",
         "topology_graph",
         "topology_graph_builder",
+        "topology_graph_mesh",
         "all",
         "mcp_tools",
       ])
