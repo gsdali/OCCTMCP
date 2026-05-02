@@ -118,6 +118,58 @@ func catalogTools() -> [Tool] {
             ])
         ),
         Tool(
+            name: "compute_metrics",
+            description: "Compute volume / surface area / center of mass / bounding box / principal axes for a scene body. Direct OCCTSwift call, no occtkit subprocess.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "metrics": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("string")]),
+                        "description": .string("Subset to compute. Default: all. Items: volume, surfaceArea, centerOfMass, boundingBox, principalAxes."),
+                    ]),
+                ]),
+                "required": .array([.string("bodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "query_topology",
+            description: "Find faces / edges / vertices on a body matching criteria. Returns stable IDs (face[N], edge[N], vertex[N]).",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "entity": .object([
+                        "type": .string("string"),
+                        "enum": .array([.string("face"), .string("edge"), .string("vertex")]),
+                    ]),
+                    "filter": .object([
+                        "type": .string("object"),
+                        "description": .string("Optional: surfaceType, curveType, minArea, maxArea."),
+                    ]),
+                    "limit": .object(["type": .string("integer"), "minimum": .int(1)]),
+                ]),
+                "required": .array([.string("bodyId"), .string("entity")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "measure_distance",
+            description: "Minimum distance between two scene bodies. Pass computeContacts=true to also return up to 32 contact pairs.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "fromBodyId": .object(["type": .string("string")]),
+                    "toBodyId": .object(["type": .string("string")]),
+                    "computeContacts": .object(["type": .string("boolean")]),
+                ]),
+                "required": .array([.string("fromBodyId"), .string("toBodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
             name: "compare_versions",
             description: "Diff the current scene against a snapshot from N runs ago. Detects added / removed / appearance-changed / file-changed bodies.",
             inputSchema: .object([
@@ -169,6 +221,41 @@ func dispatch(callName: String, arguments: [String: Value]) async -> CallTool.Re
             name: arguments["name"]?.stringValue
         )
         return await SceneTools.setAppearance(bodyId: bodyId, update: update).asCallToolResult()
+
+    case "compute_metrics":
+        guard let bodyId = arguments["bodyId"]?.stringValue else {
+            return ToolText("compute_metrics requires `bodyId`.", isError: true).asCallToolResult()
+        }
+        let metricsArr = arguments["metrics"]?.arrayValue?.compactMap { $0.stringValue }
+        let metrics: Set<String>? = metricsArr.flatMap { $0.isEmpty ? nil : Set($0) }
+        return await IntrospectionTools.computeMetrics(bodyId: bodyId, metrics: metrics).asCallToolResult()
+
+    case "query_topology":
+        guard let bodyId = arguments["bodyId"]?.stringValue,
+              let entity = arguments["entity"]?.stringValue else {
+            return ToolText("query_topology requires `bodyId` and `entity`.", isError: true).asCallToolResult()
+        }
+        var filter = IntrospectionTools.TopologyFilter()
+        if case .object(let f)? = arguments["filter"] {
+            filter.surfaceType = f["surfaceType"]?.stringValue
+            filter.curveType = f["curveType"]?.stringValue
+            filter.minArea = f["minArea"]?.doubleValue
+            filter.maxArea = f["maxArea"]?.doubleValue
+        }
+        let limit = arguments["limit"]?.intValue
+        return await IntrospectionTools.queryTopology(
+            bodyId: bodyId, entity: entity, filter: filter, limit: limit
+        ).asCallToolResult()
+
+    case "measure_distance":
+        guard let fromId = arguments["fromBodyId"]?.stringValue,
+              let toId = arguments["toBodyId"]?.stringValue else {
+            return ToolText("measure_distance requires `fromBodyId` and `toBodyId`.", isError: true).asCallToolResult()
+        }
+        let computeContacts = arguments["computeContacts"]?.boolValue ?? false
+        return await IntrospectionTools.measureDistance(
+            fromBodyId: fromId, toBodyId: toId, computeContacts: computeContacts
+        ).asCallToolResult()
 
     case "compare_versions":
         let since = arguments["since"]?.intValue ?? 1
