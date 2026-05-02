@@ -170,6 +170,56 @@ func catalogTools() -> [Tool] {
             ])
         ),
         Tool(
+            name: "transform_body",
+            description: "Apply translate / rotate / uniform-scale to a scene body. Without outputBodyId, replaces in place; with outputBodyId, adds a new body.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "translate": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("number")]),
+                        "minItems": .int(3), "maxItems": .int(3),
+                    ]),
+                    "rotateAxisAngle": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("number")]),
+                        "minItems": .int(4), "maxItems": .int(4),
+                        "description": .string("[axisX, axisY, axisZ, radians]"),
+                    ]),
+                    "rotateEulerXyz": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("number")]),
+                        "minItems": .int(3), "maxItems": .int(3),
+                    ]),
+                    "scale": .object(["type": .string("number")]),
+                    "inPlace": .object(["type": .string("boolean")]),
+                    "outputBodyId": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("bodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "boolean_op",
+            description: "Boolean op (union / subtract / intersect / split) between two scene bodies. Output is added as a new body.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "op": .object([
+                        "type": .string("string"),
+                        "enum": .array([.string("union"), .string("subtract"), .string("intersect"), .string("split")]),
+                    ]),
+                    "aBodyId": .object(["type": .string("string")]),
+                    "bBodyId": .object(["type": .string("string")]),
+                    "outputBodyId": .object(["type": .string("string")]),
+                    "removeInputs": .object(["type": .string("boolean")]),
+                ]),
+                "required": .array([.string("op"), .string("aBodyId"), .string("bBodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
             name: "compare_versions",
             description: "Diff the current scene against a snapshot from N runs ago. Detects added / removed / appearance-changed / file-changed bodies.",
             inputSchema: .object([
@@ -255,6 +305,43 @@ func dispatch(callName: String, arguments: [String: Value]) async -> CallTool.Re
         let computeContacts = arguments["computeContacts"]?.boolValue ?? false
         return await IntrospectionTools.measureDistance(
             fromBodyId: fromId, toBodyId: toId, computeContacts: computeContacts
+        ).asCallToolResult()
+
+    case "transform_body":
+        guard let bodyId = arguments["bodyId"]?.stringValue else {
+            return ToolText("transform_body requires `bodyId`.", isError: true).asCallToolResult()
+        }
+        var opts = ConstructionTools.TransformOptions()
+        if let arr = arguments["translate"]?.arrayValue, arr.count == 3,
+           let x = arr[0].doubleValue, let y = arr[1].doubleValue, let z = arr[2].doubleValue {
+            opts.translate = SIMD3(x, y, z)
+        }
+        if let arr = arguments["rotateAxisAngle"]?.arrayValue, arr.count == 4,
+           let x = arr[0].doubleValue, let y = arr[1].doubleValue, let z = arr[2].doubleValue,
+           let r = arr[3].doubleValue {
+            opts.rotateAxisAngle = (SIMD3(x, y, z), r)
+        }
+        if let arr = arguments["rotateEulerXyz"]?.arrayValue, arr.count == 3,
+           let x = arr[0].doubleValue, let y = arr[1].doubleValue, let z = arr[2].doubleValue {
+            opts.rotateEulerXyz = SIMD3(x, y, z)
+        }
+        opts.scale = arguments["scale"]?.doubleValue
+        opts.inPlace = arguments["inPlace"]?.boolValue
+        opts.outputBodyId = arguments["outputBodyId"]?.stringValue
+        return await ConstructionTools.transformBody(bodyId: bodyId, options: opts).asCallToolResult()
+
+    case "boolean_op":
+        guard let opStr = arguments["op"]?.stringValue,
+              let op = ConstructionTools.BooleanOp(rawValue: opStr),
+              let a = arguments["aBodyId"]?.stringValue,
+              let b = arguments["bBodyId"]?.stringValue else {
+            return ToolText("boolean_op requires `op`, `aBodyId`, `bBodyId`.", isError: true).asCallToolResult()
+        }
+        return await ConstructionTools.booleanOp(
+            op: op,
+            aBodyId: a, bBodyId: b,
+            outputBodyId: arguments["outputBodyId"]?.stringValue,
+            removeInputs: arguments["removeInputs"]?.boolValue ?? false
         ).asCallToolResult()
 
     case "compare_versions":

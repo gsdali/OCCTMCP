@@ -1,0 +1,261 @@
+// ConstructionTools — scene-mutating tools that build new shapes from
+// existing ones via direct OCCTSwift calls. Each tool snapshots the
+// scene before mutating so compare_versions has prior state.
+//
+// Phase 5.3b covers transform_body and boolean_op. mirror_or_pattern
+// and apply_feature land alongside Phase 5.3c.
+
+import Foundation
+import OCCTSwift
+import ScriptHarness
+
+public enum ConstructionTools {
+
+    // ── transform_body ─────────────────────────────────────────────────
+
+    public struct TransformOptions {
+        public var translate: SIMD3<Double>?
+        public var rotateAxisAngle: (axis: SIMD3<Double>, radians: Double)?
+        public var rotateEulerXyz: SIMD3<Double>?
+        public var scale: Double?
+        public var inPlace: Bool?
+        public var outputBodyId: String?
+        public init(
+            translate: SIMD3<Double>? = nil,
+            rotateAxisAngle: (axis: SIMD3<Double>, radians: Double)? = nil,
+            rotateEulerXyz: SIMD3<Double>? = nil,
+            scale: Double? = nil,
+            inPlace: Bool? = nil,
+            outputBodyId: String? = nil
+        ) {
+            self.translate = translate
+            self.rotateAxisAngle = rotateAxisAngle
+            self.rotateEulerXyz = rotateEulerXyz
+            self.scale = scale
+            self.inPlace = inPlace
+            self.outputBodyId = outputBodyId
+        }
+    }
+
+    public static func transformBody(
+        bodyId: String,
+        options: TransformOptions,
+        store: ManifestStore = ManifestStore(),
+        history: SceneHistory = .shared
+    ) async -> ToolText {
+        guard let manifest = try? store.read() else {
+            return .init("No scene loaded. Run execute_script first.")
+        }
+        guard let body = manifest.body(withId: bodyId) else {
+            return .init("Body not found: \(bodyId)")
+        }
+        let outputDir = (store.path as NSString).deletingLastPathComponent
+        let inputPath = "\(outputDir)/\(body.file)"
+        guard FileManager.default.fileExists(atPath: inputPath) else {
+            return .init("BREP file missing: \(inputPath)")
+        }
+
+        let isInPlace = options.inPlace ?? (options.outputBodyId == nil)
+        if !isInPlace, let newId = options.outputBodyId,
+           manifest.bodies.contains(where: { $0.id == newId }) {
+            return .init("Output body id \"\(newId)\" already exists.")
+        }
+
+        let inputShape: Shape
+        do {
+            inputShape = try Shape.loadBREP(fromPath: inputPath)
+        } catch {
+            return .init("Failed to load BREP: \(error.localizedDescription)", isError: true)
+        }
+
+        var current: Shape = inputShape
+        if let t = options.translate {
+            guard let next = current.translated(by: t) else {
+                return .init("Translation failed.", isError: true)
+            }
+            current = next
+        }
+        if let r = options.rotateAxisAngle {
+            guard let next = current.rotated(axis: r.axis, angle: r.radians) else {
+                return .init("Rotation failed.", isError: true)
+            }
+            current = next
+        }
+        if let euler = options.rotateEulerXyz {
+            // extrinsic XYZ: Rx then Ry then Rz
+            for (axis, angle) in [
+                (SIMD3<Double>(1, 0, 0), euler.x),
+                (SIMD3<Double>(0, 1, 0), euler.y),
+                (SIMD3<Double>(0, 0, 1), euler.z),
+            ] where angle != 0 {
+                guard let next = current.rotated(axis: axis, angle: angle) else {
+                    return .init("Rotation failed.", isError: true)
+                }
+                current = next
+            }
+        }
+        if let s = options.scale {
+            guard let next = current.scaled(by: s) else {
+                return .init("Scale failed.", isError: true)
+            }
+            current = next
+        }
+
+        let outputPath: String
+        if isInPlace {
+            outputPath = inputPath
+        } else {
+            let id = options.outputBodyId ?? bodyId
+            outputPath = "\(outputDir)/xform-\(id)-\(shortUUID()).brep"
+        }
+        do {
+            try Exporter.writeBREP(shape: current, to: URL(fileURLWithPath: outputPath))
+        } catch {
+            return .init("Failed to write BREP: \(error.localizedDescription)", isError: true)
+        }
+
+        await history.snapshot(store: store)
+        if !isInPlace, let newId = options.outputBodyId {
+            let newFile = (outputPath as NSString).lastPathComponent
+            let newBodies = manifest.bodies + [BodyDescriptor(
+                id: newId,
+                file: newFile,
+                format: body.format,
+                name: body.name,
+                color: body.color,
+                roughness: body.roughness,
+                metallic: body.metallic
+            )]
+            let updated = ScriptManifest(
+                version: manifest.version,
+                timestamp: Date(),
+                description: manifest.description,
+                bodies: newBodies,
+                graphs: manifest.graphs,
+                metadata: manifest.metadata
+            )
+            try? store.write(updated)
+        } else {
+            // Manifest body file unchanged; bump timestamp so the watcher reloads.
+            try? store.write(manifest)
+        }
+
+        let summary = isInPlace
+            ? "Transformed \"\(bodyId)\" in place (\(body.file))."
+            : "Transformed \"\(bodyId)\" → new body \"\(options.outputBodyId!)\" → \((outputPath as NSString).lastPathComponent)"
+        return .init(summary)
+    }
+
+    // ── boolean_op ─────────────────────────────────────────────────────
+
+    public enum BooleanOp: String {
+        case union, subtract, intersect, split
+    }
+
+    public static func booleanOp(
+        op: BooleanOp,
+        aBodyId: String,
+        bBodyId: String,
+        outputBodyId: String? = nil,
+        removeInputs: Bool = false,
+        store: ManifestStore = ManifestStore(),
+        history: SceneHistory = .shared
+    ) async -> ToolText {
+        guard let manifest = try? store.read() else {
+            return .init("No scene loaded. Run execute_script first.")
+        }
+        guard let aBody = manifest.body(withId: aBodyId) else {
+            return .init("Body not found: \(aBodyId)")
+        }
+        guard let bBody = manifest.body(withId: bBodyId) else {
+            return .init("Body not found: \(bBodyId)")
+        }
+        let outId = outputBodyId ?? "\(op.rawValue)-\(aBodyId)-\(bBodyId)"
+        if manifest.bodies.contains(where: { $0.id == outId && $0.id != aBodyId && $0.id != bBodyId }) {
+            return .init("Output body id \"\(outId)\" already exists. Pass a different outputBodyId.")
+        }
+
+        let outputDir = (store.path as NSString).deletingLastPathComponent
+        let aShape: Shape
+        let bShape: Shape
+        do {
+            aShape = try Shape.loadBREP(fromPath: "\(outputDir)/\(aBody.file)")
+            bShape = try Shape.loadBREP(fromPath: "\(outputDir)/\(bBody.file)")
+        } catch {
+            return .init("Failed to load input BREP: \(error.localizedDescription)", isError: true)
+        }
+
+        let result: Shape?
+        switch op {
+        case .union:
+            result = aShape.union(bShape)
+        case .subtract:
+            result = aShape.subtracting(bShape)
+        case .intersect:
+            result = aShape.intersection(bShape)
+        case .split:
+            // OCCTSwift's split(by:) returns [Shape]?; emit a Compound is
+            // not directly supported, so wrap the array in a parent shape
+            // via Shape.compound when available. For v1, fall back to the
+            // first shape and surface a warning if there are multiple.
+            guard let pieces = aShape.split(by: bShape), let first = pieces.first else {
+                return .init("Boolean split failed.", isError: true)
+            }
+            if pieces.count > 1 {
+                result = Shape.compound(pieces) ?? first
+            } else {
+                result = first
+            }
+        }
+        guard let output = result else {
+            return .init("Boolean \(op.rawValue) failed.", isError: true)
+        }
+
+        let outFile = "\(op.rawValue)-\(outId)-\(shortUUID()).brep"
+        let outputPath = "\(outputDir)/\(outFile)"
+        do {
+            try Exporter.writeBREP(shape: output, to: URL(fileURLWithPath: outputPath))
+        } catch {
+            return .init("Failed to write BREP: \(error.localizedDescription)", isError: true)
+        }
+
+        await history.snapshot(store: store)
+
+        var bodies = manifest.bodies
+        bodies.append(BodyDescriptor(
+            id: outId,
+            file: outFile,
+            format: aBody.format,
+            name: aBody.name.map { "\(op.rawValue) \($0)" },
+            color: aBody.color,
+            roughness: aBody.roughness,
+            metallic: aBody.metallic
+        ))
+        if removeInputs {
+            for id in [aBodyId, bBodyId] {
+                if let idx = bodies.firstIndex(where: { $0.id == id }) {
+                    let removed = bodies.remove(at: idx)
+                    try? FileManager.default.removeItem(atPath: "\(outputDir)/\(removed.file)")
+                }
+            }
+        }
+        let updated = ScriptManifest(
+            version: manifest.version,
+            timestamp: Date(),
+            description: manifest.description,
+            bodies: bodies,
+            graphs: manifest.graphs,
+            metadata: manifest.metadata
+        )
+        try? store.write(updated)
+
+        let extra = removeInputs ? "; inputs removed" : ""
+        return .init("Boolean \(op.rawValue)(\(aBodyId), \(bBodyId)) → \"\(outId)\" (\(outFile))\(extra).")
+    }
+
+    // ── helpers ────────────────────────────────────────────────────────
+
+    private static func shortUUID() -> String {
+        return String(UUID().uuidString.prefix(8))
+    }
+}
