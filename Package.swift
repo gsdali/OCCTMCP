@@ -22,8 +22,15 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.11.0"),
-        .package(url: "https://github.com/gsdali/OCCTSwift.git", from: "0.156.3"),
+        // Floor 0.165.0 matches OCCTSwiftScripts' own pin (binary-target URL
+        // fix in OCCTSwift#97). Soak window for OCCT 8.0.0 beta1; bump to
+        // 1.0.0 on GA day.
+        .package(url: "https://github.com/gsdali/OCCTSwift.git", from: "0.165.0"),
         .package(url: "https://github.com/gsdali/OCCTSwiftMesh.git", from: "0.1.0"),
+        // ScriptHarness: ScriptManifest + BodyDescriptor types shared with
+        // occtkit. DrawingComposer: DrawingSpec + Composer.render for the
+        // generate_drawing tool.
+        .package(url: "https://github.com/gsdali/OCCTSwiftScripts.git", from: "0.8.1"),
     ],
     targets: [
         .target(
@@ -32,6 +39,8 @@ let package = Package(
                 .product(name: "MCP", package: "swift-sdk"),
                 .product(name: "OCCTSwift", package: "OCCTSwift"),
                 .product(name: "OCCTSwiftMesh", package: "OCCTSwiftMesh"),
+                .product(name: "ScriptHarness", package: "OCCTSwiftScripts"),
+                .product(name: "DrawingComposer", package: "OCCTSwiftScripts"),
             ],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),

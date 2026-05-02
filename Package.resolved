@@ -1,5 +1,5 @@
 {
-  "originHash" : "ade341498f1c57d8dde00422d084ad293a55be884b246a39206018b4bda8ca6d",
+  "originHash" : "3df91dd4f914c866163734d74da4febbeee15cee747232b3325f7a944cda6d06",
   "pins" : [
     {
       "identity" : "eventsource",
@@ -26,6 +26,24 @@
       "state" : {
         "revision" : "ceb6b91cec80a2988fd5ef08f908e379d4179ac3",
         "version" : "0.1.0"
+      }
+    },
+    {
+      "identity" : "occtswiftscripts",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/gsdali/OCCTSwiftScripts.git",
+      "state" : {
+        "revision" : "c8494d4a5c3ec2daf58a59e81845f3e12b5bffa7",
+        "version" : "0.8.1"
+      }
+    },
+    {
+      "identity" : "occtswiftviewport",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/gsdali/OCCTSwiftViewport.git",
+      "state" : {
+        "revision" : "aeac1d0d411614603fe34448e2e9befdaed0e032",
+        "version" : "0.50.0"
       }
     },
     {
