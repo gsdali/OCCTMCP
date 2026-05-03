@@ -158,6 +158,19 @@ func catalogTools() -> [Tool] {
             ])
         ),
         Tool(
+            name: "graph_ml",
+            description: "Export a BREP's topology graph as ML-friendly JSON. Pass an absolute BREP path and optionally a description. Wraps ScriptHarness BREPGraphJSONExporter.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "brep_path": .object(["type": .string("string")]),
+                    "description": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("brep_path")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
             name: "feature_recognize",
             description: "Detect pockets and holes via AAG heuristics. Pass an absolute BREP path; recognize_features is the scene-aware variant.",
             inputSchema: .object([
@@ -227,6 +240,25 @@ func catalogTools() -> [Tool] {
                     ]),
                 ]),
                 "required": .array([.string("bodyId"), .string("outputPath"), .string("spec")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "execute_script",
+            description: "Compile and run an arbitrary Swift CAD script via a cached SPM workspace. The script must import OCCTSwift and ScriptHarness, accumulate geometry on a ScriptContext, and call ctx.emit(). Cold start ~60s on first call (full SPM build of OCCTSwift); subsequent calls ~1-2s incremental.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "code": .object([
+                        "type": .string("string"),
+                        "description": .string("Complete Swift source for main.swift."),
+                    ]),
+                    "description": .object([
+                        "type": .string("string"),
+                        "description": .string("Short description of what this script creates."),
+                    ]),
+                ]),
+                "required": .array([.string("code")]),
                 "additionalProperties": .bool(false),
             ])
         ),
@@ -562,6 +594,15 @@ func dispatch(callName: String, arguments: [String: Value]) async -> CallTool.Re
     case "ping":
         return ToolText("pong").asCallToolResult()
 
+    case "execute_script":
+        guard let code = arguments["code"]?.stringValue else {
+            return ToolText("execute_script requires `code`.", isError: true).asCallToolResult()
+        }
+        return await ExecuteScriptTool.execute(
+            code: code,
+            description: arguments["description"]?.stringValue
+        ).asCallToolResult()
+
     case "apply_feature":
         guard let bodyId = arguments["bodyId"]?.stringValue,
               let feature = arguments["feature"] else {
@@ -662,6 +703,15 @@ func dispatch(callName: String, arguments: [String: Value]) async -> CallTool.Re
             return ToolText("feature_recognize requires `brep_path`.", isError: true).asCallToolResult()
         }
         return await AnalysisTools.featureRecognize(brepPath: path).asCallToolResult()
+
+    case "graph_ml":
+        guard let path = arguments["brep_path"]?.stringValue else {
+            return ToolText("graph_ml requires `brep_path`.", isError: true).asCallToolResult()
+        }
+        return await AnalysisTools.graphML(
+            brepPath: path,
+            description: arguments["description"]?.stringValue
+        ).asCallToolResult()
 
     case "remove_body":
         guard let bodyId = arguments["bodyId"]?.stringValue else {
