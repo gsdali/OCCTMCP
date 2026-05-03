@@ -231,6 +231,25 @@ func catalogTools() -> [Tool] {
             ])
         ),
         Tool(
+            name: "execute_script",
+            description: "Compile and run an arbitrary Swift CAD script via a cached SPM workspace. The script must import OCCTSwift and ScriptHarness, accumulate geometry on a ScriptContext, and call ctx.emit(). Cold start ~60s on first call (full SPM build of OCCTSwift); subsequent calls ~1-2s incremental.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "code": .object([
+                        "type": .string("string"),
+                        "description": .string("Complete Swift source for main.swift."),
+                    ]),
+                    "description": .object([
+                        "type": .string("string"),
+                        "description": .string("Short description of what this script creates."),
+                    ]),
+                ]),
+                "required": .array([.string("code")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
             name: "ping",
             description: "Sanity-check tool — returns 'pong' so callers can verify the OCCTMCP Swift server is alive.",
             inputSchema: .object([
@@ -561,6 +580,15 @@ func dispatch(callName: String, arguments: [String: Value]) async -> CallTool.Re
     switch callName {
     case "ping":
         return ToolText("pong").asCallToolResult()
+
+    case "execute_script":
+        guard let code = arguments["code"]?.stringValue else {
+            return ToolText("execute_script requires `code`.", isError: true).asCallToolResult()
+        }
+        return await ExecuteScriptTool.execute(
+            code: code,
+            description: arguments["description"]?.stringValue
+        ).asCallToolResult()
 
     case "apply_feature":
         guard let bodyId = arguments["bodyId"]?.stringValue,
