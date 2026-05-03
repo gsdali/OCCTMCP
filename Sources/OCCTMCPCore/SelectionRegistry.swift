@@ -103,13 +103,21 @@ public struct AnchorSnapshot: Sendable, Codable {
     public var surfaceType: String?
     /// Edge curve type (line / circle / ...). nil for faces/vertices.
     public var curveType: String?
+    /// Geometric centre of a circular edge — the centre of curvature,
+    /// distinct from `center` (which holds the parameter-midpoint *rim*
+    /// point for edges). Lets `add_dimension(radial)` compute an exact
+    /// radius from geometry and lets `AnnotationsRenderer.dimension`
+    /// draw a leader from circleCenter → rim. nil for non-edges and
+    /// non-circular edges.
+    public var circleCenter: [Double]?
     public init(
         center: [Double],
         normal: [Double]? = nil,
         area: Double? = nil,
         length: Double? = nil,
         surfaceType: String? = nil,
-        curveType: String? = nil
+        curveType: String? = nil,
+        circleCenter: [Double]? = nil
     ) {
         self.center = center
         self.normal = normal
@@ -117,6 +125,7 @@ public struct AnchorSnapshot: Sendable, Codable {
         self.length = length
         self.surfaceType = surfaceType
         self.curveType = curveType
+        self.circleCenter = circleCenter
     }
 }
 

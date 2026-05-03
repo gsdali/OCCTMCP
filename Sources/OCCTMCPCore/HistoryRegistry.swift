@@ -85,4 +85,48 @@ extension HistoryRegistry {
         }
         graphs[bodyId] = graph
     }
+
+    /// Conditional version of `recordIdentityHistory` — only records
+    /// if the pre/post topology counts match (face / edge / vertex).
+    /// Returns true when history was captured, false when the
+    /// post-mutation shape's topology differs and the heuristic should
+    /// take over downstream. Used by tools like `heal_shape` whose
+    /// operation usually preserves topology but might rewire edges
+    /// when fixing real defects.
+    @discardableResult
+    public func recordIdentityHistoryIfTopologyPreserved(
+        bodyId: String,
+        preMutationShape: Shape,
+        postMutationShape: Shape,
+        operationName: String
+    ) -> Bool {
+        guard let pre = TopologyGraph(shape: preMutationShape),
+              let post = TopologyGraph(shape: postMutationShape) else {
+            return false
+        }
+        guard pre.faceCount == post.faceCount,
+              pre.edgeCount == post.edgeCount,
+              pre.vertexCount == post.vertexCount else {
+            return false
+        }
+        for kind in [TopologyGraph.NodeKind.face, .edge, .vertex] {
+            let count: Int
+            switch kind {
+            case .face:    count = post.faceCount
+            case .edge:    count = post.edgeCount
+            case .vertex:  count = post.vertexCount
+            default:       count = 0
+            }
+            for i in 0..<count {
+                let ref = TopologyGraph.NodeRef(kind: kind, index: i)
+                post.recordHistory(
+                    operationName: operationName,
+                    original: ref,
+                    replacements: [ref]
+                )
+            }
+        }
+        graphs[bodyId] = post
+        return true
+    }
 }

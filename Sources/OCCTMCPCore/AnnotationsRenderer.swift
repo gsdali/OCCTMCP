@@ -227,9 +227,12 @@ public enum AnnotationsRenderer {
             guard world.count >= 3 else { return nil }
             return angularDimension(armA: world[0], apex: world[1], armB: world[2], id: dim.id, color: color)
         case "radial":
-            // We only stored the centre; without a point on the edge we
-            // can't draw a leader. Fall back to a small marker sphere
-            // at the centre so the LLM at least sees something.
+            // v0.7: anchorPoints is [centre, rim] — draw a leader
+            // cylinder + rim arrow cap. Falls back to a marker sphere
+            // when the snapshot is legacy (centre only).
+            if world.count >= 2 {
+                return radialLeader(centre: world[0], rim: world[1], id: dim.id, color: color)
+            }
             return radialMarker(at: world[0], id: dim.id, color: color)
         default:
             return nil
@@ -304,6 +307,37 @@ public enum AnnotationsRenderer {
     private static func radialMarker(at center: SIMD3<Double>, id: String, color: SIMD4<Float>) -> ViewportBody? {
         guard let sphere = Shape.sphere(center: center, radius: 0.5) else { return nil }
         return makeViewportBody(sphere, id: id, color: color)
+    }
+
+    private static func radialLeader(
+        centre: SIMD3<Double>, rim: SIMD3<Double>, id: String, color: SIMD4<Float>
+    ) -> ViewportBody? {
+        let direction = rim - centre
+        let length = simd_length(direction)
+        guard length > 1e-6 else { return nil }
+        let dir = simd_normalize(direction)
+        let radius = max(length * 0.005, 0.05)
+        let capRadius = radius * 3
+        let capHeight = max(length * 0.06, 0.5)
+        var pieces: [Shape] = []
+        if let leader = Shape.cylinder(at: centre, direction: dir, radius: radius, height: length) {
+            pieces.append(leader)
+        }
+        if let rimCap = Shape.cylinder(
+            at: rim,
+            direction: dir,
+            radius: capRadius,
+            height: capHeight
+        ) {
+            pieces.append(rimCap)
+        }
+        // Small marker at the centre to make it visually distinct from
+        // a linear dimension (whose endpoints both get arrow caps).
+        if let centreMarker = Shape.sphere(center: centre, radius: capRadius) {
+            pieces.append(centreMarker)
+        }
+        guard !pieces.isEmpty, let compound = Shape.compound(pieces) else { return nil }
+        return makeViewportBody(compound, id: id, color: color)
     }
 
     // MARK: - Param helpers

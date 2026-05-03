@@ -75,11 +75,28 @@ public enum HealingTools {
         }
 
         await history.snapshot(store: store)
+
+        // v0.7: opt into history-based remap when heal preserved
+        // topology (which is the typical case — heal mostly tightens
+        // tolerances and merges duplicate vertices). When heal
+        // actually rewires geometry, the count check fails and
+        // remap_selection falls back to the centroid heuristic.
+        let recordedBodyId = isInPlace ? bodyId : (outputBodyId ?? bodyId)
+        let topologyPreserved = await HistoryRegistry.shared.recordIdentityHistoryIfTopologyPreserved(
+            bodyId: recordedBodyId,
+            preMutationShape: inputShape,
+            postMutationShape: healed,
+            operationName: "heal_shape"
+        )
+
         var warnings: [String] = []
         if before.faceCount == after.faceCount &&
             before.edgeCount == after.edgeCount &&
             before.isValid == after.isValid {
             warnings.append("Shape.healed() reported no structural change; before/after may be identical")
+        }
+        if !topologyPreserved {
+            warnings.append("Heal changed topology — remap_selection will fall back to the centroid heuristic for selections on this body.")
         }
 
         if !isInPlace, let newId = outputBodyId {

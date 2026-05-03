@@ -125,11 +125,27 @@ public enum SelectionTools {
                 if let hi = filter.maxLength, length > hi { continue }
 
                 let center = edgeMidpoint(edge: edge)
+                // For circular edges, also capture the geometric centre
+                // (centre of curvature). `center` is the rim point at
+                // the parameter midpoint; circleCenter is the centre of
+                // the circle — radial dimensions need both.
+                let circleCenter: [Double]?
+                if edge.isCircle, let bounds = edge.parameterBounds {
+                    let mid = (bounds.first + bounds.last) * 0.5
+                    if let c = edge.centerOfCurvature(at: mid) {
+                        circleCenter = [c.x, c.y, c.z]
+                    } else {
+                        circleCenter = nil
+                    }
+                } else {
+                    circleCenter = nil
+                }
                 let anchor = TopologyAnchor.edge(bodyId: bodyId, index: i)
                 let snapshot = AnchorSnapshot(
                     center: center.map { [$0.x, $0.y, $0.z] } ?? [0, 0, 0],
                     length: length,
-                    curveType: curveType
+                    curveType: curveType,
+                    circleCenter: circleCenter
                 )
                 await registry.record(anchor: anchor, snapshot: snapshot)
                 entries.append(SelectionEntry(
