@@ -8,6 +8,7 @@
 
 import Foundation
 import MCP
+import OCCTSwiftViewport
 
 public enum OCCTMCPVersion {
     public static let serverName = "occtmcp"
@@ -259,6 +260,113 @@ func catalogTools() -> [Tool] {
                     ]),
                 ]),
                 "required": .array([.string("code")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "set_assembly_metadata",
+            description: "Write XCAF document- or component-level metadata onto an OCAF document and save as binary .xbf. Mirrors occtkit set-metadata.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "inputPath": .object(["type": .string("string"), "description": .string("STEP / XBF input.")]),
+                    "outputPath": .object(["type": .string("string"), "description": .string("Output .xbf path.")]),
+                    "scope": .object([
+                        "type": .string("string"),
+                        "enum": .array([.string("document"), .string("component")]),
+                    ]),
+                    "componentId": .object(["type": .string("integer")]),
+                    "metadata": .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "title": .object(["type": .string("string")]),
+                            "drawnBy": .object(["type": .string("string")]),
+                            "material": .object(["type": .string("string")]),
+                            "weight": .object(["type": .string("number")]),
+                            "revision": .object(["type": .string("string")]),
+                            "partNumber": .object(["type": .string("string")]),
+                            "customAttrs": .object([
+                                "type": .string("object"),
+                                "additionalProperties": .object(["type": .string("string")]),
+                            ]),
+                        ]),
+                    ]),
+                ]),
+                "required": .array([.string("inputPath"), .string("outputPath"), .string("metadata")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "check_thickness",
+            description: "Wall-thickness analysis (sheet metal / casting / 3D-printing). UV-grid sample each face + cast inward ray to opposite wall. Reports min/max/mean and flags samples below minAcceptable.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "minAcceptable": .object(["type": .string("number")]),
+                    "samplingDensity": .object([
+                        "type": .string("string"),
+                        "enum": .array([.string("coarse"), .string("medium"), .string("fine")]),
+                    ]),
+                ]),
+                "required": .array([.string("bodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "render_preview",
+            description: "Headless Metal render of the current scene (or a subset) to PNG. Uses OCCTSwiftViewport's OffscreenRenderer + OCCTSwiftTools' Shape→ViewportBody bridge.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "outputPath": .object(["type": .string("string")]),
+                    "bodyIds": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("string")]),
+                    ]),
+                    "options": .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "camera": .object([
+                                "type": .string("string"),
+                                "enum": .array([
+                                    .string("iso"), .string("front"), .string("back"),
+                                    .string("top"), .string("bottom"), .string("left"), .string("right"),
+                                ]),
+                            ]),
+                            "cameraPosition": .object([
+                                "type": .string("array"),
+                                "items": .object(["type": .string("number")]),
+                                "minItems": .int(3), "maxItems": .int(3),
+                            ]),
+                            "cameraTarget": .object([
+                                "type": .string("array"),
+                                "items": .object(["type": .string("number")]),
+                                "minItems": .int(3), "maxItems": .int(3),
+                            ]),
+                            "cameraUp": .object([
+                                "type": .string("array"),
+                                "items": .object(["type": .string("number")]),
+                                "minItems": .int(3), "maxItems": .int(3),
+                            ]),
+                            "width": .object(["type": .string("integer"), "minimum": .int(1)]),
+                            "height": .object(["type": .string("integer"), "minimum": .int(1)]),
+                            "displayMode": .object([
+                                "type": .string("string"),
+                                "enum": .array([
+                                    .string("wireframe"), .string("shaded"),
+                                    .string("shadedWithEdges"), .string("flat"),
+                                    .string("xray"), .string("rendered"),
+                                ]),
+                            ]),
+                            "background": .object([
+                                "type": .string("string"),
+                                "description": .string("'light' | 'dark' | 'transparent' | '#rrggbb' / '#rrggbbaa'"),
+                            ]),
+                        ]),
+                    ]),
+                ]),
+                "required": .array([.string("outputPath")]),
                 "additionalProperties": .bool(false),
             ])
         ),
@@ -589,10 +697,93 @@ struct ToolCatalog: Encodable {
     let count: Int
 }
 
+func parseRenderOptions(_ value: Value?) -> RenderPreviewTool.Options {
+    var opts = RenderPreviewTool.Options()
+    guard case .object(let o)? = value else { return opts }
+    if let s = o["camera"]?.stringValue, let p = RenderPreviewTool.CameraPreset(rawValue: s) {
+        opts.camera = p
+    }
+    func vec3(_ key: String) -> SIMD3<Float>? {
+        guard let arr = o[key]?.arrayValue, arr.count == 3,
+              let x = arr[0].doubleValue, let y = arr[1].doubleValue, let z = arr[2].doubleValue else { return nil }
+        return SIMD3(Float(x), Float(y), Float(z))
+    }
+    opts.cameraPosition = vec3("cameraPosition")
+    opts.cameraTarget = vec3("cameraTarget")
+    opts.cameraUp = vec3("cameraUp")
+    if let n = o["width"]?.intValue { opts.width = n }
+    if let n = o["height"]?.intValue { opts.height = n }
+    if let s = o["displayMode"]?.stringValue, let m = DisplayMode(rawValue: s) {
+        opts.displayMode = m
+    }
+    if let s = o["background"]?.stringValue {
+        switch s {
+        case "light":        opts.background = .light
+        case "dark":         opts.background = .dark
+        case "transparent":  opts.background = .transparent
+        default:             opts.background = .hex(s)
+        }
+    }
+    return opts
+}
+
 func dispatch(callName: String, arguments: [String: Value]) async -> CallTool.Result {
     switch callName {
     case "ping":
         return ToolText("pong").asCallToolResult()
+
+    case "set_assembly_metadata":
+        guard let inputPath = arguments["inputPath"]?.stringValue,
+              let outputPath = arguments["outputPath"]?.stringValue else {
+            return ToolText("set_assembly_metadata requires `inputPath` and `outputPath`.", isError: true).asCallToolResult()
+        }
+        let scope: AssemblyTools.MetadataScope = (arguments["scope"]?.stringValue)
+            .flatMap(AssemblyTools.MetadataScope.init(rawValue:)) ?? .document
+        let componentId: Int64? = arguments["componentId"]?.intValue.map(Int64.init)
+        var meta = AssemblyTools.AssemblyMetadata()
+        if case .object(let m)? = arguments["metadata"] {
+            meta.title = m["title"]?.stringValue
+            meta.drawnBy = m["drawnBy"]?.stringValue
+            meta.material = m["material"]?.stringValue
+            meta.weight = m["weight"]?.doubleValue
+            meta.revision = m["revision"]?.stringValue
+            meta.partNumber = m["partNumber"]?.stringValue
+            if case .object(let attrs)? = m["customAttrs"] {
+                for (k, v) in attrs {
+                    if let s = v.stringValue { meta.customAttrs[k] = s }
+                }
+            }
+        }
+        return await AssemblyTools.setAssemblyMetadata(
+            inputPath: inputPath,
+            outputPath: outputPath,
+            scope: scope,
+            componentId: componentId,
+            metadata: meta
+        ).asCallToolResult()
+
+    case "check_thickness":
+        guard let bodyId = arguments["bodyId"]?.stringValue else {
+            return ToolText("check_thickness requires `bodyId`.", isError: true).asCallToolResult()
+        }
+        let density: EngineeringTools.SamplingDensity =
+            (arguments["samplingDensity"]?.stringValue)
+                .flatMap(EngineeringTools.SamplingDensity.init(rawValue:)) ?? .medium
+        return await EngineeringTools.checkThickness(
+            bodyId: bodyId,
+            minAcceptable: arguments["minAcceptable"]?.doubleValue,
+            samplingDensity: density
+        ).asCallToolResult()
+
+    case "render_preview":
+        guard let outputPath = arguments["outputPath"]?.stringValue else {
+            return ToolText("render_preview requires `outputPath`.", isError: true).asCallToolResult()
+        }
+        let ids = arguments["bodyIds"]?.arrayValue?.compactMap { $0.stringValue }
+        let opts = parseRenderOptions(arguments["options"])
+        return await RenderPreviewTool.render(
+            outputPath: outputPath, bodyIds: ids, options: opts
+        ).asCallToolResult()
 
     case "execute_script":
         guard let code = arguments["code"]?.stringValue else {
