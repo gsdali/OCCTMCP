@@ -38,6 +38,10 @@ let package = Package(
         // OCCTSwiftViewport directly for the OffscreenRenderer.
         .package(url: "https://github.com/gsdali/OCCTSwiftTools.git", from: "0.4.1"),
         .package(url: "https://github.com/gsdali/OCCTSwiftViewport.git", from: "0.55.0"),
+        // OCCTSwiftAIS: high-level scene mgmt — selection-from-topology,
+        // history-based selection remap, dimensions, standard scene
+        // objects. Powers the v0.4 net-new tools.
+        .package(url: "https://github.com/gsdali/OCCTSwiftAIS.git", from: "0.6.0"),
     ],
     targets: [
         .target(
@@ -50,6 +54,7 @@ let package = Package(
                 .product(name: "DrawingComposer", package: "OCCTSwiftScripts"),
                 .product(name: "OCCTSwiftTools", package: "OCCTSwiftTools"),
                 .product(name: "OCCTSwiftViewport", package: "OCCTSwiftViewport"),
+                .product(name: "OCCTSwiftAIS", package: "OCCTSwiftAIS"),
             ],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
