@@ -166,4 +166,25 @@ public actor SelectionRegistry {
     public func count() -> Int {
         return anchors.count
     }
+
+    /// Snapshot of the registry — used by `list_selections` to surface
+    /// active picks back to the LLM. Sorted by selectionId for stable
+    /// output across runs.
+    public func listEntries() -> [Entry] {
+        return anchors.keys.sorted().map { id in
+            Entry(
+                selectionId: id,
+                bodyId: anchors[id]?.bodyId ?? "",
+                kind: anchors[id]?.kind ?? "unknown",
+                snapshot: snapshots[id]
+            )
+        }
+    }
+
+    public struct Entry: Sendable, Codable {
+        public let selectionId: String
+        public let bodyId: String
+        public let kind: String
+        public let snapshot: AnchorSnapshot?
+    }
 }

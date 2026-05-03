@@ -493,6 +493,49 @@ func catalogTools() -> [Tool] {
             ])
         ),
         Tool(
+            name: "list_selections",
+            description: "Return every active selectionId in the SelectionRegistry plus its anchor metadata. Cheap introspection — useful when the LLM has lost track of which picks it has made earlier in the session.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([:]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "clear_selections",
+            description: "Drop every selectionId from the SelectionRegistry. Returns the count cleared.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([:]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "list_annotations",
+            description: "Read the <output_dir>/annotations.json sidecar and return its dimensions + scene primitives.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([:]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "auto_dimension",
+            description: "Run AAG hole detection, then add a radial dimension to each hole's circular rim edge. One call instead of N (recognize_features → select_topology → add_dimension per hole). Returns a list of dimensionIds + selectionIds the LLM can refer to later.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "showDiameter": .object([
+                        "type": .string("boolean"),
+                        "description": .string("If true, dimension shows diameter instead of radius. Default false."),
+                    ]),
+                ]),
+                "required": .array([.string("bodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
             name: "select_topology",
             description: "Pick faces / edges / vertices on a scene body matching criteria. Returns server-tracked selectionIds (sel:<bodyId>#<kind>[<idx>]) plus an anchor snapshot — the LLM can refer back via remap_selection / add_dimension.",
             inputSchema: .object([
@@ -961,6 +1004,24 @@ func dispatch(callName: String, arguments: [String: Value]) async -> CallTool.Re
         let tol = arguments["toleranceMmFraction"]?.doubleValue ?? 0.01
         return await RemapTools.remapSelection(
             selectionIds: ids, toleranceMmFraction: tol
+        ).asCallToolResult()
+
+    case "list_selections":
+        return await RegistryIntrospectionTools.listSelections().asCallToolResult()
+
+    case "clear_selections":
+        return await RegistryIntrospectionTools.clearSelections().asCallToolResult()
+
+    case "list_annotations":
+        return await RegistryIntrospectionTools.listAnnotations().asCallToolResult()
+
+    case "auto_dimension":
+        guard let bodyId = arguments["bodyId"]?.stringValue else {
+            return ToolText("auto_dimension requires `bodyId`.", isError: true).asCallToolResult()
+        }
+        return await AutoDimensionTool.autoDimension(
+            bodyId: bodyId,
+            showDiameter: arguments["showDiameter"]?.boolValue ?? false
         ).asCallToolResult()
 
     case "select_topology":
