@@ -184,6 +184,53 @@ func catalogTools() -> [Tool] {
             ])
         ),
         Tool(
+            name: "apply_feature",
+            description: "Apply a single feature spec (drill / fillet / chamfer / extrude / revolve / thread / boolean) to a scene body via OCCTSwift's FeatureReconstructor. Without outputBodyId, replaces in place; with outputBodyId, adds a new body.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "feature": .object([
+                        "type": .string("object"),
+                        "description": .string("FeatureSpec object with a 'kind' discriminator. See OCCTSwift/Sources/OCCTSwift/FeatureReconstructor.swift for the schema."),
+                    ]),
+                    "outputBodyId": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("bodyId"), .string("feature")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "inspect_assembly",
+            description: "Walk an XCAF assembly hierarchy. Pass either a scene bodyId (BREP — degenerate single-node response) or an inputPath (STEP / IGES / XBF for the full tree).",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "inputPath": .object(["type": .string("string")]),
+                    "depth": .object(["type": .string("integer"), "minimum": .int(0)]),
+                ]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "generate_drawing",
+            description: "Render a multi-view ISO 128-30 DXF technical drawing for a scene body. Pass a DrawingSpec object (sheet, title, views, sections, dimensions, ...). The tool injects shape + output into the spec.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "outputPath": .object(["type": .string("string")]),
+                    "spec": .object([
+                        "type": .string("object"),
+                        "description": .string("DrawingSpec object: { sheet, title?, views, sections?, dimensions?, ... }. See OCCTSwiftScripts/Sources/DrawingComposer/Spec.swift."),
+                    ]),
+                ]),
+                "required": .array([.string("bodyId"), .string("outputPath"), .string("spec")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
             name: "ping",
             description: "Sanity-check tool — returns 'pong' so callers can verify the OCCTMCP Swift server is alive.",
             inputSchema: .object([
@@ -514,6 +561,34 @@ func dispatch(callName: String, arguments: [String: Value]) async -> CallTool.Re
     switch callName {
     case "ping":
         return ToolText("pong").asCallToolResult()
+
+    case "apply_feature":
+        guard let bodyId = arguments["bodyId"]?.stringValue,
+              let feature = arguments["feature"] else {
+            return ToolText("apply_feature requires `bodyId` and `feature`.", isError: true).asCallToolResult()
+        }
+        return await FeatureTools.applyFeature(
+            bodyId: bodyId,
+            feature: feature,
+            outputBodyId: arguments["outputBodyId"]?.stringValue
+        ).asCallToolResult()
+
+    case "inspect_assembly":
+        return await AssemblyTools.inspectAssembly(
+            bodyId: arguments["bodyId"]?.stringValue,
+            inputPath: arguments["inputPath"]?.stringValue,
+            depth: arguments["depth"]?.intValue
+        ).asCallToolResult()
+
+    case "generate_drawing":
+        guard let bodyId = arguments["bodyId"]?.stringValue,
+              let outputPath = arguments["outputPath"]?.stringValue,
+              let spec = arguments["spec"] else {
+            return ToolText("generate_drawing requires `bodyId`, `outputPath`, `spec`.", isError: true).asCallToolResult()
+        }
+        return await DrawingTools.generateDrawing(
+            bodyId: bodyId, outputPath: outputPath, spec: spec
+        ).asCallToolResult()
 
     case "get_api_reference":
         let category = arguments["category"]?.stringValue ?? "mcp_tools"
