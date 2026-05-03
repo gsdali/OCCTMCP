@@ -24,6 +24,12 @@ public enum RenderPreviewTool {
         public var height: Int
         public var displayMode: DisplayMode
         public var background: BackgroundSpec
+        /// Read `<output_dir>/annotations.json` and overlay the
+        /// supported primitive kinds (Trihedron / WorkPlane / Axis /
+        /// BoundingBox / DiffMarker). Default true. Dimensions and
+        /// PointClouds are silently skipped in v0.5 — no text rendering
+        /// path on OffscreenRenderer yet.
+        public var renderAnnotations: Bool
         public init(
             camera: CameraPreset = .iso,
             cameraPosition: SIMD3<Float>? = nil,
@@ -32,7 +38,8 @@ public enum RenderPreviewTool {
             width: Int = 800,
             height: Int = 600,
             displayMode: DisplayMode = .shadedWithEdges,
-            background: BackgroundSpec = .light
+            background: BackgroundSpec = .light,
+            renderAnnotations: Bool = true
         ) {
             self.camera = camera
             self.cameraPosition = cameraPosition
@@ -42,6 +49,7 @@ public enum RenderPreviewTool {
             self.height = height
             self.displayMode = displayMode
             self.background = background
+            self.renderAnnotations = renderAnnotations
         }
     }
 
@@ -145,6 +153,13 @@ public enum RenderPreviewTool {
         }
         if bodies.isEmpty {
             return .init("No renderable bodies.", isError: true)
+        }
+
+        // v0.5: overlay sidecar annotations as additional ViewportBodies.
+        if options.renderAnnotations {
+            let sidecar = AnnotationsStore(outputDir: outputDir).read()
+            let overlays = AnnotationsRenderer.bodies(from: sidecar)
+            bodies.append(contentsOf: overlays)
         }
 
         guard let renderer = OffscreenRenderer() else {

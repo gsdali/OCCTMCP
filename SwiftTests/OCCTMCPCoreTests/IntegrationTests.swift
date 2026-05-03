@@ -87,6 +87,76 @@ struct IntegrationTests {
         }
     }
 
+    @Test("annotation tools round-trip via the sidecar")
+    func annotationsRoundTrip() async throws {
+        guard let binary = Self.binaryURL else {
+            Issue.record("Binary not built — run `swift build` first.")
+            return
+        }
+        let scene = NSTemporaryDirectory() + "occtmcp-it-anno-\(UUID().uuidString)"
+        try FileManager.default.createDirectory(atPath: scene, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: scene) }
+
+        // No BREP needed for these tools — annotations are pure scene
+        // sidecar mutation. We do still need a manifest so other tools
+        // don't fail; an empty bodies array is fine.
+        let manifest = ScriptManifest(
+            description: "Annotation round-trip scene",
+            bodies: []
+        )
+        let store = ManifestStore(path: "\(scene)/manifest.json")
+        try store.write(manifest)
+
+        let harness = try Harness(
+            binary: binary,
+            extraEnv: ["OCCTMCP_OUTPUT_DIR": scene]
+        )
+        defer { harness.terminate() }
+        try harness.handshake()
+
+        // add a Trihedron
+        try harness.send(.init(
+            id: 20, method: "tools/call",
+            params: .object([
+                "name": .string("add_scene_primitive"),
+                "arguments": .object([
+                    "kind": .string("trihedron"),
+                    "id": .string("test_trihedron"),
+                    "params": .object([
+                        "origin": .array([.double(0), .double(0), .double(0)]),
+                        "axisLength": .double(10),
+                    ]),
+                ]),
+            ])
+        ))
+        let addResp = try harness.recv(timeout: 5)
+        #expect(addResp["error"] == nil)
+
+        // sidecar should now exist with our trihedron
+        let sidecarPath = "\(scene)/annotations.json"
+        #expect(FileManager.default.fileExists(atPath: sidecarPath))
+        let raw = try Data(contentsOf: URL(fileURLWithPath: sidecarPath))
+        let decoded = try JSONDecoder().decode(AnnotationsSidecar.self, from: raw)
+        #expect(decoded.primitives.contains { $0.id == "test_trihedron" })
+
+        // remove it
+        try harness.send(.init(
+            id: 21, method: "tools/call",
+            params: .object([
+                "name": .string("remove_scene_annotation"),
+                "arguments": .object([
+                    "id": .string("test_trihedron"),
+                ]),
+            ])
+        ))
+        let removeResp = try harness.recv(timeout: 5)
+        #expect(removeResp["error"] == nil)
+
+        let raw2 = try Data(contentsOf: URL(fileURLWithPath: sidecarPath))
+        let decoded2 = try JSONDecoder().decode(AnnotationsSidecar.self, from: raw2)
+        #expect(decoded2.primitives.allSatisfy { $0.id != "test_trihedron" })
+    }
+
     @Test("ping responds and the scene tools resolve a tempdir manifest")
     func pingAndScene() async throws {
         guard let binary = Self.binaryURL else {
