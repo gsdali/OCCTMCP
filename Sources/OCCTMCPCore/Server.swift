@@ -158,6 +158,19 @@ func catalogTools() -> [Tool] {
             ])
         ),
         Tool(
+            name: "graph_ml",
+            description: "Export a BREP's topology graph as ML-friendly JSON. Pass an absolute BREP path and optionally a description. Wraps ScriptHarness BREPGraphJSONExporter.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "brep_path": .object(["type": .string("string")]),
+                    "description": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("brep_path")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
             name: "feature_recognize",
             description: "Detect pockets and holes via AAG heuristics. Pass an absolute BREP path; recognize_features is the scene-aware variant.",
             inputSchema: .object([
@@ -690,6 +703,15 @@ func dispatch(callName: String, arguments: [String: Value]) async -> CallTool.Re
             return ToolText("feature_recognize requires `brep_path`.", isError: true).asCallToolResult()
         }
         return await AnalysisTools.featureRecognize(brepPath: path).asCallToolResult()
+
+    case "graph_ml":
+        guard let path = arguments["brep_path"]?.stringValue else {
+            return ToolText("graph_ml requires `brep_path`.", isError: true).asCallToolResult()
+        }
+        return await AnalysisTools.graphML(
+            brepPath: path,
+            description: arguments["description"]?.stringValue
+        ).asCallToolResult()
 
     case "remove_body":
         guard let bodyId = arguments["bodyId"]?.stringValue else {

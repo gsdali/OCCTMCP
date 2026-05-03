@@ -288,6 +288,27 @@ public enum AnalysisTools {
         }
     }
 
+    public static func graphML(
+        brepPath: String,
+        description: String? = nil
+    ) async -> ToolText {
+        guard FileManager.default.fileExists(atPath: brepPath) else {
+            return .init("BREP file not found: \(brepPath)")
+        }
+        do {
+            let shape = try Shape.loadBREP(fromPath: brepPath)
+            let graph = try GraphIO.buildGraph(from: shape)
+            let tempURL = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("occtmcp-graphml-\(UUID().uuidString).json")
+            try BREPGraphJSONExporter.export(graph, to: tempURL, description: description)
+            defer { try? FileManager.default.removeItem(at: tempURL) }
+            let data = try Data(contentsOf: tempURL)
+            return .init(String(data: data, encoding: .utf8) ?? "{}")
+        } catch {
+            return .init("graph_ml failed: \(error.localizedDescription)", isError: true)
+        }
+    }
+
     public static func featureRecognize(brepPath: String) async -> ToolText {
         guard FileManager.default.fileExists(atPath: brepPath) else {
             return .init("BREP file not found: \(brepPath)")
