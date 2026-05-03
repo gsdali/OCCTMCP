@@ -40,7 +40,8 @@ public enum RemapTools {
         selectionIds: [String],
         toleranceMmFraction: Double = 0.01,
         store: ManifestStore = ManifestStore(),
-        registry: SelectionRegistry = .shared
+        registry: SelectionRegistry = .shared,
+        historyRegistry: HistoryRegistry = .shared
     ) async -> ToolText {
         guard let manifest = try? store.read() else {
             return .init("No scene loaded.")
@@ -84,6 +85,10 @@ public enum RemapTools {
             let diag = simd_length(bb.max - bb.min)
             let tolerance = max(diag * toleranceMmFraction, 1e-6)
 
+            // v0.6: prefer the recorded TopologyGraph history over the
+            // centroid heuristic when a mutating tool opted in.
+            let recordedGraph = await historyRegistry.graph(for: bodyId)
+
             for id in ids {
                 guard let anchor = await registry.anchor(for: id) else {
                     remapped.append(.init(
@@ -92,6 +97,24 @@ public enum RemapTools {
                         fate: "lost",
                         confidenceMm: nil
                     ))
+                    continue
+                }
+                if let graph = recordedGraph,
+                   let entry = remapViaHistory(
+                       originalId: id,
+                       anchor: anchor,
+                       graph: graph,
+                       bodyId: bodyId
+                   ) {
+                    // Refresh the registry so the new selectionId
+                    // (same string in 1:1 cases) keeps anchor metadata
+                    // up-to-date if the snapshot needs rebuilding.
+                    if let snapshot = await registry.snapshot(for: id),
+                       let newId = entry.newSelectionIds.first,
+                       let newAnchor = TopologyAnchor.parse(newId) {
+                        await registry.record(anchor: newAnchor, snapshot: snapshot)
+                    }
+                    remapped.append(entry)
                     continue
                 }
                 let snapshot = await registry.snapshot(for: id)
@@ -109,6 +132,74 @@ public enum RemapTools {
         }
 
         return IntrospectionTools.encode(RemapReport(remapped: remapped))
+    }
+
+    /// History-based remap path. Mirrors the AIS InteractiveContext.remap
+    /// algorithm: TopologyGraph.findDerived(of:) walks history records.
+    /// Returns nil if the anchor isn't a face/edge/vertex (body always
+    /// rebinds; whole-body picks aren't routed here).
+    static func remapViaHistory(
+        originalId: String,
+        anchor: TopologyAnchor,
+        graph: TopologyGraph,
+        bodyId: String
+    ) -> RemapEntry? {
+        let kind: TopologyGraph.NodeKind
+        let originalIndex: Int
+        switch anchor {
+        case .body:
+            return RemapEntry(
+                originalSelectionId: originalId,
+                newSelectionIds: [TopologyAnchor.body(bodyId: bodyId).selectionId],
+                fate: "preserved",
+                confidenceMm: 0
+            )
+        case .face(_, let idx):
+            kind = .face; originalIndex = idx
+        case .edge(_, let idx):
+            kind = .edge; originalIndex = idx
+        case .vertex(_, let idx):
+            kind = .vertex; originalIndex = idx
+        }
+        let derived = graph.findDerived(of: .init(kind: kind, index: originalIndex))
+        if derived.isEmpty {
+            // No record means either "deleted" or "not mentioned —
+            // presumed unchanged". For 1:1 ops this normally means
+            // the explicit identity record was suppressed; emit "lost"
+            // so callers don't silently inherit a stale index.
+            return nil
+        }
+        // Filter to same-kind derivatives and clamp to the live graph.
+        let count: Int
+        switch kind {
+        case .face:    count = graph.faceCount
+        case .edge:    count = graph.edgeCount
+        case .vertex:  count = graph.vertexCount
+        default:       count = 0
+        }
+        let validIndices = derived
+            .filter { $0.kind == kind && $0.index < count }
+            .map(\.index)
+        if validIndices.isEmpty {
+            return nil
+        }
+        let newIds = validIndices.map { idx -> String in
+            switch kind {
+            case .face:    return TopologyAnchor.face(bodyId: bodyId, index: idx).selectionId
+            case .edge:    return TopologyAnchor.edge(bodyId: bodyId, index: idx).selectionId
+            case .vertex:  return TopologyAnchor.vertex(bodyId: bodyId, index: idx).selectionId
+            default:       return ""
+            }
+        }
+        let fate: String = (validIndices.count == 1 && validIndices[0] == originalIndex)
+            ? "preserved"
+            : "split"
+        return RemapEntry(
+            originalSelectionId: originalId,
+            newSelectionIds: newIds,
+            fate: fate,
+            confidenceMm: 0   // history-based — no centroid distance
+        )
     }
 
     static func remapOne(
