@@ -220,6 +220,133 @@ func catalogTools() -> [Tool] {
             ])
         ),
         Tool(
+            name: "mirror_or_pattern",
+            description: "Mirror / linear / circular pattern of a body. Output is a single (possibly compound) body added to the scene.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "kind": .object([
+                        "type": .string("string"),
+                        "enum": .array([.string("mirror"), .string("linear"), .string("circular")]),
+                    ]),
+                    "params": .object([
+                        "type": .string("object"),
+                        "description": .string("Mirror: planeNormal (required), planeOrigin (optional). Linear: direction, spacing, count. Circular: axisOrigin, axisDirection, totalCount, totalAngle (optional)."),
+                    ]),
+                    "outputBodyId": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("bodyId"), .string("kind"), .string("params")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "generate_mesh",
+            description: "Tessellate a scene body into triangles + quality metrics. Optionally inline geometry or write to .stl/.obj.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "linearDeflection": .object(["type": .string("number")]),
+                    "angularDeflection": .object(["type": .string("number")]),
+                    "returnGeometry": .object(["type": .string("boolean")]),
+                    "outputPath": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("bodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "simplify_mesh",
+            description: "QEM mesh decimation via OCCTSwiftMesh (vendored meshoptimizer). Outputs .stl or .obj.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "outputPath": .object(["type": .string("string")]),
+                    "targetTriangleCount": .object(["type": .string("integer"), "minimum": .int(1)]),
+                    "targetReduction": .object(["type": .string("number")]),
+                    "preserveBoundary": .object(["type": .string("boolean")]),
+                    "preserveTopology": .object(["type": .string("boolean")]),
+                    "maxHausdorffDistance": .object(["type": .string("number")]),
+                    "linearDeflection": .object(["type": .string("number")]),
+                    "angularDeflection": .object(["type": .string("number")]),
+                ]),
+                "required": .array([.string("bodyId"), .string("outputPath")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "heal_shape",
+            description: "Heal imported / non-watertight geometry via OCCT ShapeFix. Returns before/after stats.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "outputBodyId": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("bodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "read_brep",
+            description: "Add a .brep from disk to the scene as a new body.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "inputPath": .object(["type": .string("string")]),
+                    "bodyId": .object(["type": .string("string")]),
+                    "color": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("number")]),
+                    ]),
+                ]),
+                "required": .array([.string("inputPath")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "import_file",
+            description: "Multi-format CAD import (STEP / IGES / BREP). Adds the imported shape as a single body.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "inputPath": .object(["type": .string("string")]),
+                    "format": .object([
+                        "type": .string("string"),
+                        "enum": .array([.string("auto"), .string("step"), .string("iges"), .string("obj"), .string("brep")]),
+                    ]),
+                    "idPrefix": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("inputPath")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "export_scene",
+            description: "Export the current scene (or a subset) to step / iges / brep / stl / obj / gltf / glb.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "format": .object([
+                        "type": .string("string"),
+                        "enum": .array([
+                            .string("step"), .string("iges"), .string("brep"),
+                            .string("stl"), .string("obj"), .string("gltf"), .string("glb"),
+                        ]),
+                    ]),
+                    "outputPath": .object(["type": .string("string")]),
+                    "bodyIds": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("string")]),
+                    ]),
+                ]),
+                "required": .array([.string("format"), .string("outputPath")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
             name: "compare_versions",
             description: "Diff the current scene against a snapshot from N runs ago. Detects added / removed / appearance-changed / file-changed bodies.",
             inputSchema: .object([
@@ -343,6 +470,112 @@ func dispatch(callName: String, arguments: [String: Value]) async -> CallTool.Re
             outputBodyId: arguments["outputBodyId"]?.stringValue,
             removeInputs: arguments["removeInputs"]?.boolValue ?? false
         ).asCallToolResult()
+
+    case "mirror_or_pattern":
+        guard let bodyId = arguments["bodyId"]?.stringValue,
+              let kindStr = arguments["kind"]?.stringValue,
+              let kind = ConstructionTools.PatternKind(rawValue: kindStr) else {
+            return ToolText("mirror_or_pattern requires `bodyId` and `kind`.", isError: true).asCallToolResult()
+        }
+        var p = ConstructionTools.PatternParams()
+        if case .object(let f)? = arguments["params"] {
+            if let arr = f["planeOrigin"]?.arrayValue, arr.count == 3,
+               let x = arr[0].doubleValue, let y = arr[1].doubleValue, let z = arr[2].doubleValue {
+                p.planeOrigin = SIMD3(x, y, z)
+            }
+            if let arr = f["planeNormal"]?.arrayValue, arr.count == 3,
+               let x = arr[0].doubleValue, let y = arr[1].doubleValue, let z = arr[2].doubleValue {
+                p.planeNormal = SIMD3(x, y, z)
+            }
+            if let arr = f["direction"]?.arrayValue, arr.count == 3,
+               let x = arr[0].doubleValue, let y = arr[1].doubleValue, let z = arr[2].doubleValue {
+                p.direction = SIMD3(x, y, z)
+            }
+            p.spacing = f["spacing"]?.doubleValue
+            p.count = f["count"]?.intValue
+            if let arr = f["axisOrigin"]?.arrayValue, arr.count == 3,
+               let x = arr[0].doubleValue, let y = arr[1].doubleValue, let z = arr[2].doubleValue {
+                p.axisOrigin = SIMD3(x, y, z)
+            }
+            if let arr = f["axisDirection"]?.arrayValue, arr.count == 3,
+               let x = arr[0].doubleValue, let y = arr[1].doubleValue, let z = arr[2].doubleValue {
+                p.axisDirection = SIMD3(x, y, z)
+            }
+            p.totalCount = f["totalCount"]?.intValue
+            p.totalAngle = f["totalAngle"]?.doubleValue
+        }
+        return await ConstructionTools.mirrorOrPattern(
+            bodyId: bodyId, kind: kind, params: p,
+            outputBodyId: arguments["outputBodyId"]?.stringValue
+        ).asCallToolResult()
+
+    case "generate_mesh":
+        guard let bodyId = arguments["bodyId"]?.stringValue else {
+            return ToolText("generate_mesh requires `bodyId`.", isError: true).asCallToolResult()
+        }
+        return await MeshTools.generateMesh(
+            bodyId: bodyId,
+            linearDeflection: arguments["linearDeflection"]?.doubleValue ?? 0.1,
+            angularDeflection: arguments["angularDeflection"]?.doubleValue ?? 0.5,
+            returnGeometry: arguments["returnGeometry"]?.boolValue ?? false,
+            outputPath: arguments["outputPath"]?.stringValue
+        ).asCallToolResult()
+
+    case "simplify_mesh":
+        guard let bodyId = arguments["bodyId"]?.stringValue,
+              let outputPath = arguments["outputPath"]?.stringValue else {
+            return ToolText("simplify_mesh requires `bodyId` and `outputPath`.", isError: true).asCallToolResult()
+        }
+        return await MeshTools.simplifyMesh(
+            bodyId: bodyId, outputPath: outputPath,
+            targetTriangleCount: arguments["targetTriangleCount"]?.intValue,
+            targetReduction: arguments["targetReduction"]?.doubleValue,
+            preserveBoundary: arguments["preserveBoundary"]?.boolValue ?? true,
+            preserveTopology: arguments["preserveTopology"]?.boolValue ?? true,
+            maxHausdorffDistance: arguments["maxHausdorffDistance"]?.doubleValue,
+            linearDeflection: arguments["linearDeflection"]?.doubleValue ?? 0.1,
+            angularDeflection: arguments["angularDeflection"]?.doubleValue ?? 0.5
+        ).asCallToolResult()
+
+    case "heal_shape":
+        guard let bodyId = arguments["bodyId"]?.stringValue else {
+            return ToolText("heal_shape requires `bodyId`.", isError: true).asCallToolResult()
+        }
+        return await HealingTools.healShape(
+            bodyId: bodyId,
+            outputBodyId: arguments["outputBodyId"]?.stringValue
+        ).asCallToolResult()
+
+    case "read_brep":
+        guard let inputPath = arguments["inputPath"]?.stringValue else {
+            return ToolText("read_brep requires `inputPath`.", isError: true).asCallToolResult()
+        }
+        let color = arguments["color"]?.arrayValue?.compactMap { $0.doubleValue.flatMap { Float($0) } }
+        return await IOTools.readBrep(
+            inputPath: inputPath,
+            bodyId: arguments["bodyId"]?.stringValue,
+            color: color
+        ).asCallToolResult()
+
+    case "import_file":
+        guard let inputPath = arguments["inputPath"]?.stringValue else {
+            return ToolText("import_file requires `inputPath`.", isError: true).asCallToolResult()
+        }
+        let format = (arguments["format"]?.stringValue).flatMap(IOTools.ImportFormat.init(rawValue:)) ?? .auto
+        return await IOTools.importFile(
+            inputPath: inputPath,
+            format: format,
+            idPrefix: arguments["idPrefix"]?.stringValue ?? "imported"
+        ).asCallToolResult()
+
+    case "export_scene":
+        guard let formatStr = arguments["format"]?.stringValue,
+              let format = IOTools.ExportFormat(rawValue: formatStr),
+              let outputPath = arguments["outputPath"]?.stringValue else {
+            return ToolText("export_scene requires `format` and `outputPath`.", isError: true).asCallToolResult()
+        }
+        let ids = arguments["bodyIds"]?.arrayValue?.compactMap { $0.stringValue }
+        return await IOTools.exportScene(format: format, outputPath: outputPath, bodyIds: ids).asCallToolResult()
 
     case "compare_versions":
         let since = arguments["since"]?.intValue ?? 1

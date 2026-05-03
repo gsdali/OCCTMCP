@@ -253,9 +253,126 @@ public enum ConstructionTools {
         return .init("Boolean \(op.rawValue)(\(aBodyId), \(bBodyId)) → \"\(outId)\" (\(outFile))\(extra).")
     }
 
+    // ── mirror_or_pattern ──────────────────────────────────────────────
+
+    public enum PatternKind: String {
+        case mirror, linear, circular
+    }
+
+    public struct PatternParams {
+        // mirror
+        public var planeOrigin: SIMD3<Double>?
+        public var planeNormal: SIMD3<Double>?
+        // linear
+        public var direction: SIMD3<Double>?
+        public var spacing: Double?
+        public var count: Int?
+        // circular
+        public var axisOrigin: SIMD3<Double>?
+        public var axisDirection: SIMD3<Double>?
+        public var totalCount: Int?
+        public var totalAngle: Double?
+        public init() {}
+    }
+
+    /// OCCTSwift's pattern primitives return a single (possibly compound)
+    /// Shape — different from the Node implementation which split the
+    /// compound into N separate BREPs/bodies. Emit one body per call;
+    /// callers wanting individual instances can do scene-graph splits in
+    /// a follow-up.
+    public static func mirrorOrPattern(
+        bodyId: String,
+        kind: PatternKind,
+        params: PatternParams,
+        outputBodyId: String? = nil,
+        store: ManifestStore = ManifestStore(),
+        history: SceneHistory = .shared
+    ) async -> ToolText {
+        guard let manifest = try? store.read() else {
+            return .init("No scene loaded. Run execute_script first.")
+        }
+        guard let body = manifest.body(withId: bodyId) else {
+            return .init("Body not found: \(bodyId)")
+        }
+        let outputDir = (store.path as NSString).deletingLastPathComponent
+        let inputPath = "\(outputDir)/\(body.file)"
+        guard FileManager.default.fileExists(atPath: inputPath) else {
+            return .init("BREP file missing: \(inputPath)")
+        }
+        let outId = outputBodyId ?? "\(kind.rawValue)-\(bodyId)"
+        if manifest.bodies.contains(where: { $0.id == outId }) {
+            return .init("Output body id \"\(outId)\" already exists.")
+        }
+
+        let shape: Shape
+        do {
+            shape = try Shape.loadBREP(fromPath: inputPath)
+        } catch {
+            return .init("Failed to load BREP: \(error.localizedDescription)", isError: true)
+        }
+
+        let result: Shape?
+        switch kind {
+        case .mirror:
+            guard let normal = params.planeNormal else {
+                return .init("mirror requires `planeNormal`.")
+            }
+            result = shape.mirrored(planeNormal: normal, planeOrigin: params.planeOrigin ?? .zero)
+        case .linear:
+            guard let dir = params.direction, let spacing = params.spacing, let count = params.count else {
+                return .init("linear requires `direction`, `spacing`, `count`.")
+            }
+            result = shape.linearPattern(direction: dir, spacing: spacing, count: count)
+        case .circular:
+            guard let axisO = params.axisOrigin, let axisD = params.axisDirection, let total = params.totalCount else {
+                return .init("circular requires `axisOrigin`, `axisDirection`, `totalCount`.")
+            }
+            result = shape.circularPattern(
+                axisPoint: axisO,
+                axisDirection: axisD,
+                count: total,
+                angle: params.totalAngle ?? 0
+            )
+        }
+        guard let output = result else {
+            return .init("Pattern \(kind.rawValue) failed.", isError: true)
+        }
+
+        let outFile = "\(kind.rawValue)-\(outId)-\(shortUUID()).brep"
+        let outputPath = "\(outputDir)/\(outFile)"
+        do {
+            try Exporter.writeBREP(shape: output, to: URL(fileURLWithPath: outputPath))
+        } catch {
+            return .init("Failed to write BREP: \(error.localizedDescription)", isError: true)
+        }
+
+        await history.snapshot(store: store)
+        var bodies = manifest.bodies
+        bodies.append(BodyDescriptor(
+            id: outId,
+            file: outFile,
+            format: body.format,
+            name: body.name.map { "\(kind.rawValue) \($0)" },
+            color: body.color,
+            roughness: body.roughness,
+            metallic: body.metallic
+        ))
+        let updated = ScriptManifest(
+            version: manifest.version,
+            timestamp: Date(),
+            description: manifest.description,
+            bodies: bodies,
+            graphs: manifest.graphs,
+            metadata: manifest.metadata
+        )
+        try? store.write(updated)
+
+        return .init("Pattern \(kind.rawValue) on \"\(bodyId)\" → \"\(outId)\" (\(outFile)).")
+    }
+
     // ── helpers ────────────────────────────────────────────────────────
 
-    private static func shortUUID() -> String {
+    static func shortUUID() -> String {
         return String(UUID().uuidString.prefix(8))
     }
 }
