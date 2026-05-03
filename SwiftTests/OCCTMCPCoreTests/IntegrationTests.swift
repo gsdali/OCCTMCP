@@ -14,6 +14,7 @@
 
 import Foundation
 import Testing
+import OCCTSwift
 import ScriptHarness
 @testable import OCCTMCPCore
 
@@ -84,6 +85,116 @@ struct IntegrationTests {
             "check_thickness",
         ] {
             #expect(names.contains(expected), "missing tool: \(expected)")
+        }
+    }
+
+    @Test("history-based remap preserves selectionIds across transform_body")
+    func historyRemapPreservesAcrossTransform() async throws {
+        guard let binary = Self.binaryURL else {
+            Issue.record("Binary not built — run `swift build` first.")
+            return
+        }
+        let scene = NSTemporaryDirectory() + "occtmcp-it-history-\(UUID().uuidString)"
+        try FileManager.default.createDirectory(atPath: scene, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: scene) }
+
+        // Synthesize a real cylinder BREP so transform_body /
+        // select_topology can actually load it. r=10mm, h=25mm gives
+        // 3 faces (lateral + 2 caps), which is enough to verify
+        // selection survives a translate.
+        guard let cyl = Shape.cylinder(radius: 10, height: 25) else {
+            Issue.record("Failed to synthesize cylinder BREP fixture")
+            return
+        }
+        try Exporter.writeBREP(shape: cyl, to: URL(fileURLWithPath: "\(scene)/cyl.brep"))
+
+        let manifest = ScriptManifest(
+            description: "History remap test scene",
+            bodies: [
+                BodyDescriptor(
+                    id: "cyl",
+                    file: "cyl.brep",
+                    color: [0.8, 0.7, 0.3, 1]
+                ),
+            ]
+        )
+        let store = ManifestStore(path: "\(scene)/manifest.json")
+        try store.write(manifest)
+
+        let harness = try Harness(
+            binary: binary,
+            extraEnv: ["OCCTMCP_OUTPUT_DIR": scene]
+        )
+        defer { harness.terminate() }
+        try harness.handshake()
+
+        // 1. select_topology — pick a face on the cylinder
+        try harness.send(.init(
+            id: 30, method: "tools/call",
+            params: .object([
+                "name": .string("select_topology"),
+                "arguments": .object([
+                    "bodyId": .string("cyl"),
+                    "kind": .string("face"),
+                    "limit": .int(1),
+                ]),
+            ])
+        ))
+        let selectResp = try harness.recv(timeout: 10)
+        guard case .object(let result)? = selectResp["result"],
+              case .array(let content)? = result["content"],
+              case .object(let firstContent)? = content.first,
+              let text = firstContent["text"]?.stringValue,
+              let selectData = text.data(using: .utf8),
+              let parsed = try JSONSerialization.jsonObject(with: selectData) as? [String: Any],
+              let selections = parsed["selections"] as? [[String: Any]],
+              let firstSelection = selections.first,
+              let selectionId = firstSelection["selectionId"] as? String else {
+            Issue.record("select_topology response shape unexpected")
+            return
+        }
+
+        // 2. transform_body — move it
+        try harness.send(.init(
+            id: 31, method: "tools/call",
+            params: .object([
+                "name": .string("transform_body"),
+                "arguments": .object([
+                    "bodyId": .string("cyl"),
+                    "translate": .array([.double(20), .double(0), .double(0)]),
+                ]),
+            ])
+        ))
+        let transformResp = try harness.recv(timeout: 30)
+        #expect(transformResp["error"] == nil)
+
+        // 3. remap_selection — should find the face via history (fate
+        //    preserved), not via centroid heuristic
+        try harness.send(.init(
+            id: 32, method: "tools/call",
+            params: .object([
+                "name": .string("remap_selection"),
+                "arguments": .object([
+                    "selectionIds": .array([.string(selectionId)]),
+                ]),
+            ])
+        ))
+        let remapResp = try harness.recv(timeout: 5)
+        guard case .object(let remapResult)? = remapResp["result"],
+              case .array(let remapContent)? = remapResult["content"],
+              case .object(let remapBody)? = remapContent.first,
+              let remapText = remapBody["text"]?.stringValue,
+              let remapData = remapText.data(using: .utf8),
+              let remapParsed = try JSONSerialization.jsonObject(with: remapData) as? [String: Any],
+              let remapped = remapParsed["remapped"] as? [[String: Any]],
+              let firstEntry = remapped.first else {
+            Issue.record("remap_selection response shape unexpected")
+            return
+        }
+        #expect(firstEntry["fate"] as? String == "preserved",
+                "expected history-based remap to preserve, got: \(firstEntry["fate"] ?? "<nil>")")
+        if let conf = firstEntry["confidenceMm"] as? Double {
+            #expect(conf == 0, "history-based remap should report confidenceMm=0, got \(conf)")
         }
     }
 

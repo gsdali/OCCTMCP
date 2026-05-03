@@ -106,17 +106,30 @@ public enum AnnotationsTools {
             guard let edgeId = anchors["circularEdge"] else {
                 return .init("radial dimension requires anchors.circularEdge.")
             }
-            guard let snap = await registry.snapshot(for: edgeId),
-                  let lengthArc = snap.length else {
-                return .init("Could not resolve circular edge — re-run select_topology to capture length.")
+            guard let snap = await registry.snapshot(for: edgeId) else {
+                return .init("Could not resolve circular edge.")
             }
-            // Approximate radius from arc length — works for full
-            // circles (length = 2πr). Fine for the typical use case
-            // (drilled holes, circular features).
-            let radius = lengthArc / (2 * .pi)
+            let rim = SIMD3(snap.center[0], snap.center[1], snap.center[2])
+            // v0.7: prefer the geometric centre captured by select_topology.
+            // Falls back to arc-length / 2π for legacy snapshots that
+            // don't have circleCenter populated.
+            let radius: Double
+            let centerArr: [Double]
+            if let c = snap.circleCenter, c.count == 3 {
+                let centre = SIMD3(c[0], c[1], c[2])
+                radius = simd_length(rim - centre)
+                centerArr = c
+            } else if let lengthArc = snap.length {
+                radius = lengthArc / (2 * .pi)
+                centerArr = snap.center   // best we can do without circleCenter
+            } else {
+                return .init("Could not resolve circular edge — re-run select_topology after upgrading to capture circleCenter.")
+            }
             let value = showDiameter ? radius * 2 : radius
-            let center = SIMD3(snap.center[0], snap.center[1], snap.center[2])
-            let points = [[center.x, center.y, center.z]]
+            // anchorPoints: [centre, rim]. Renderer draws a leader
+            // between them; centre alone (legacy v0.5 shape) was just
+            // a marker sphere with no rim attachment.
+            let points = [centerArr, [rim.x, rim.y, rim.z]]
             doc.dimensions.removeAll { $0.id == dimId }
             doc.dimensions.append(.init(
                 id: dimId, kind: "radial",
