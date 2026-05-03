@@ -110,6 +110,10 @@ public enum ExecuteScriptTool {
 
     static func writeUserScript(code: String) throws {
         let mainURL = cacheDir.appendingPathComponent("Sources/Script/main.swift")
+        try FileManager.default.createDirectory(
+            at: mainURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
         try code.write(to: mainURL, atomically: true, encoding: .utf8)
     }
 

@@ -8,6 +8,7 @@
 
 import Foundation
 import MCP
+import OCCTSwiftViewport
 
 public enum OCCTMCPVersion {
     public static let serverName = "occtmcp"
@@ -259,6 +260,63 @@ func catalogTools() -> [Tool] {
                     ]),
                 ]),
                 "required": .array([.string("code")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "render_preview",
+            description: "Headless Metal render of the current scene (or a subset) to PNG. Uses OCCTSwiftViewport's OffscreenRenderer + OCCTSwiftTools' Shape→ViewportBody bridge.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "outputPath": .object(["type": .string("string")]),
+                    "bodyIds": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("string")]),
+                    ]),
+                    "options": .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "camera": .object([
+                                "type": .string("string"),
+                                "enum": .array([
+                                    .string("iso"), .string("front"), .string("back"),
+                                    .string("top"), .string("bottom"), .string("left"), .string("right"),
+                                ]),
+                            ]),
+                            "cameraPosition": .object([
+                                "type": .string("array"),
+                                "items": .object(["type": .string("number")]),
+                                "minItems": .int(3), "maxItems": .int(3),
+                            ]),
+                            "cameraTarget": .object([
+                                "type": .string("array"),
+                                "items": .object(["type": .string("number")]),
+                                "minItems": .int(3), "maxItems": .int(3),
+                            ]),
+                            "cameraUp": .object([
+                                "type": .string("array"),
+                                "items": .object(["type": .string("number")]),
+                                "minItems": .int(3), "maxItems": .int(3),
+                            ]),
+                            "width": .object(["type": .string("integer"), "minimum": .int(1)]),
+                            "height": .object(["type": .string("integer"), "minimum": .int(1)]),
+                            "displayMode": .object([
+                                "type": .string("string"),
+                                "enum": .array([
+                                    .string("wireframe"), .string("shaded"),
+                                    .string("shadedWithEdges"), .string("flat"),
+                                    .string("xray"), .string("rendered"),
+                                ]),
+                            ]),
+                            "background": .object([
+                                "type": .string("string"),
+                                "description": .string("'light' | 'dark' | 'transparent' | '#rrggbb' / '#rrggbbaa'"),
+                            ]),
+                        ]),
+                    ]),
+                ]),
+                "required": .array([.string("outputPath")]),
                 "additionalProperties": .bool(false),
             ])
         ),
@@ -589,10 +647,50 @@ struct ToolCatalog: Encodable {
     let count: Int
 }
 
+func parseRenderOptions(_ value: Value?) -> RenderPreviewTool.Options {
+    var opts = RenderPreviewTool.Options()
+    guard case .object(let o)? = value else { return opts }
+    if let s = o["camera"]?.stringValue, let p = RenderPreviewTool.CameraPreset(rawValue: s) {
+        opts.camera = p
+    }
+    func vec3(_ key: String) -> SIMD3<Float>? {
+        guard let arr = o[key]?.arrayValue, arr.count == 3,
+              let x = arr[0].doubleValue, let y = arr[1].doubleValue, let z = arr[2].doubleValue else { return nil }
+        return SIMD3(Float(x), Float(y), Float(z))
+    }
+    opts.cameraPosition = vec3("cameraPosition")
+    opts.cameraTarget = vec3("cameraTarget")
+    opts.cameraUp = vec3("cameraUp")
+    if let n = o["width"]?.intValue { opts.width = n }
+    if let n = o["height"]?.intValue { opts.height = n }
+    if let s = o["displayMode"]?.stringValue, let m = DisplayMode(rawValue: s) {
+        opts.displayMode = m
+    }
+    if let s = o["background"]?.stringValue {
+        switch s {
+        case "light":        opts.background = .light
+        case "dark":         opts.background = .dark
+        case "transparent":  opts.background = .transparent
+        default:             opts.background = .hex(s)
+        }
+    }
+    return opts
+}
+
 func dispatch(callName: String, arguments: [String: Value]) async -> CallTool.Result {
     switch callName {
     case "ping":
         return ToolText("pong").asCallToolResult()
+
+    case "render_preview":
+        guard let outputPath = arguments["outputPath"]?.stringValue else {
+            return ToolText("render_preview requires `outputPath`.", isError: true).asCallToolResult()
+        }
+        let ids = arguments["bodyIds"]?.arrayValue?.compactMap { $0.stringValue }
+        let opts = parseRenderOptions(arguments["options"])
+        return await RenderPreviewTool.render(
+            outputPath: outputPath, bodyIds: ids, options: opts
+        ).asCallToolResult()
 
     case "execute_script":
         guard let code = arguments["code"]?.stringValue else {

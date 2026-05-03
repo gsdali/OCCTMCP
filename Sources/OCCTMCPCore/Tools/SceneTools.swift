@@ -9,7 +9,7 @@ import MCP
 import ScriptHarness
 
 /// Result envelope used by every scene tool.
-public struct ToolText {
+public struct ToolText: Sendable {
     public let text: String
     public let isError: Bool
     public init(_ text: String, isError: Bool = false) {

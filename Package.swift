@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.1
 //
 // OCCTMCP — Swift port of the Node MCP server. Coexists with the original
 // TypeScript implementation under src/ during the migration; once feature
@@ -22,15 +22,22 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.11.0"),
-        // Floor 0.165.0 matches OCCTSwiftScripts' own pin (binary-target URL
-        // fix in OCCTSwift#97). Soak window for OCCT 8.0.0 beta1; bump to
-        // 1.0.0 on GA day.
-        .package(url: "https://github.com/gsdali/OCCTSwift.git", from: "0.165.0"),
+        // Floor 0.168.0 matches OCCTSwiftTools' minimum (ImportProgress + the
+        // GPU edge/vertex pick fields). When OCCT 8.0.0 GA tags, bump to
+        // OCCTSwift 1.0.0.
+        .package(url: "https://github.com/gsdali/OCCTSwift.git", from: "0.168.0"),
         .package(url: "https://github.com/gsdali/OCCTSwiftMesh.git", from: "0.1.0"),
-        // ScriptHarness: ScriptManifest + BodyDescriptor types shared with
-        // occtkit. DrawingComposer: DrawingSpec + Composer.render for the
-        // generate_drawing tool.
-        .package(url: "https://github.com/gsdali/OCCTSwiftScripts.git", from: "0.8.1"),
+        // ScriptHarness + DrawingComposer for shared types and the
+        // generate_drawing pipeline.
+        // NOTE: branch("main") rather than from: "0.9.0" because the
+        // post-Tools-split fix (5533b89) hasn't been tagged yet. Bump to
+        // a real tag once v0.9.0 ships.
+        .package(url: "https://github.com/gsdali/OCCTSwiftScripts.git", branch: "main"),
+        // Tools is the Shape ↔ ViewportBody bridge (split out of
+        // OCCTSwiftViewport in v0.55.0). render_preview also pulls in
+        // OCCTSwiftViewport directly for the OffscreenRenderer.
+        .package(url: "https://github.com/gsdali/OCCTSwiftTools.git", from: "0.4.1"),
+        .package(url: "https://github.com/gsdali/OCCTSwiftViewport.git", from: "0.55.0"),
     ],
     targets: [
         .target(
@@ -41,6 +48,8 @@ let package = Package(
                 .product(name: "OCCTSwiftMesh", package: "OCCTSwiftMesh"),
                 .product(name: "ScriptHarness", package: "OCCTSwiftScripts"),
                 .product(name: "DrawingComposer", package: "OCCTSwiftScripts"),
+                .product(name: "OCCTSwiftTools", package: "OCCTSwiftTools"),
+                .product(name: "OCCTSwiftViewport", package: "OCCTSwiftViewport"),
             ],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
