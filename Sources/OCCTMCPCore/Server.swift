@@ -363,6 +363,10 @@ func catalogTools() -> [Tool] {
                                 "type": .string("string"),
                                 "description": .string("'light' | 'dark' | 'transparent' | '#rrggbb' / '#rrggbbaa'"),
                             ]),
+                            "renderAnnotations": .object([
+                                "type": .string("boolean"),
+                                "description": .string("Overlay sidecar annotations (Trihedron / WorkPlane / Axis / BoundingBox / DiffMarker). Default true."),
+                            ]),
                         ]),
                     ]),
                 ]),
@@ -882,6 +886,9 @@ func parseRenderOptions(_ value: Value?) -> RenderPreviewTool.Options {
         case "transparent":  opts.background = .transparent
         default:             opts.background = .hex(s)
         }
+    }
+    if let b = o["renderAnnotations"]?.boolValue {
+        opts.renderAnnotations = b
     }
     return opts
 }
