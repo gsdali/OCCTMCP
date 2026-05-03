@@ -175,3 +175,126 @@ public enum AssemblyTools {
 }
 
 import simd
+
+// MARK: - set_assembly_metadata
+
+extension AssemblyTools {
+
+    public struct MetadataReport: Encodable {
+        public let outputPath: String
+        public let applied: [String: String]
+    }
+
+    public enum MetadataScope: String {
+        case document, component
+    }
+
+    public struct AssemblyMetadata {
+        public var title: String?
+        public var drawnBy: String?
+        public var material: String?
+        public var weight: Double?
+        public var revision: String?
+        public var partNumber: String?
+        public var customAttrs: [String: String]
+        public init(
+            title: String? = nil,
+            drawnBy: String? = nil,
+            material: String? = nil,
+            weight: Double? = nil,
+            revision: String? = nil,
+            partNumber: String? = nil,
+            customAttrs: [String: String] = [:]
+        ) {
+            self.title = title
+            self.drawnBy = drawnBy
+            self.material = material
+            self.weight = weight
+            self.revision = revision
+            self.partNumber = partNumber
+            self.customAttrs = customAttrs
+        }
+    }
+
+    /// Write XCAF metadata onto a Document, save as OCAF binary (.xbf).
+    /// Mirrors `occtkit set-metadata` — same TDataStd_NamedData key set,
+    /// same BinXCAF storage format.
+    public static func setAssemblyMetadata(
+        inputPath: String,
+        outputPath: String,
+        scope: MetadataScope = .document,
+        componentId: Int64? = nil,
+        metadata: AssemblyMetadata
+    ) async -> ToolText {
+        guard FileManager.default.fileExists(atPath: inputPath) else {
+            return .init("File not found: \(inputPath)")
+        }
+        let ext = (inputPath as NSString).pathExtension.lowercased()
+        let document: Document
+        do {
+            switch ext {
+            case "step", "stp":
+                guard let d = Document.loadSTEP(
+                    from: URL(fileURLWithPath: inputPath),
+                    modes: STEPReaderModes()
+                ) else {
+                    return .init("Failed to load STEP at \(inputPath).", isError: true)
+                }
+                document = d
+            case "xbf":
+                document = try Document.load(from: URL(fileURLWithPath: inputPath))
+            default:
+                return .init("Unsupported extension '.\(ext)'. Pass STEP or XBF.")
+            }
+        } catch {
+            return .init("Failed to load document: \(error.localizedDescription)", isError: true)
+        }
+
+        let target: AssemblyNode
+        switch scope {
+        case .document:
+            guard let main = document.mainLabel ?? document.rootNodes.first else {
+                return .init("Document has no main / root label to attach metadata to.", isError: true)
+            }
+            target = main
+        case .component:
+            guard let id = componentId else {
+                return .init("componentId is required when scope=component.")
+            }
+            guard let node = document.node(at: id) else {
+                return .init("No component with labelId \(id) in document.")
+            }
+            target = node
+        }
+
+        var applied: [String: String] = [:]
+        if let v = metadata.title       { _ = target.setNamedString("title", value: v); applied["title"] = v }
+        if let v = metadata.drawnBy     { _ = target.setNamedString("drawnBy", value: v); applied["drawnBy"] = v }
+        if let v = metadata.material    { _ = target.setNamedString("material", value: v); applied["material"] = v }
+        if let v = metadata.weight      { _ = target.setNamedReal("weight", value: v); applied["weight"] = "\(v)" }
+        if let v = metadata.revision    { _ = target.setNamedString("revision", value: v); applied["revision"] = v }
+        if let v = metadata.partNumber  { _ = target.setNamedString("partNumber", value: v); applied["partNumber"] = v }
+        if scope == .component, let v = metadata.title { _ = target.setName(v) }
+
+        for (k, v) in metadata.customAttrs {
+            _ = target.setNamedString(k, value: v)
+            applied[k] = v
+        }
+
+        let outURL = URL(fileURLWithPath: outputPath)
+        try? FileManager.default.createDirectory(
+            at: outURL.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        document.defineAllFormats()
+        _ = document.setStorageFormat("BinXCAF")
+        let status = document.saveOCAF(to: outURL.path)
+        guard status == .ok else {
+            return .init("Failed to save OCAF document at \(outURL.path): \(status)", isError: true)
+        }
+
+        return IntrospectionTools.encode(MetadataReport(
+            outputPath: outputPath,
+            applied: applied
+        ))
+    }
+}

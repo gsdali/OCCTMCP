@@ -7,7 +7,7 @@ import Foundation
 import Testing
 @testable import OCCTMCPCore
 
-@Suite("execute_script logic")
+@Suite("execute_script logic", .serialized)
 struct ExecuteScriptTests {
 
     @Test("filterBuildOutput drops OCCT bridge nullability noise")

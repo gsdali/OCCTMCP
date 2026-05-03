@@ -264,6 +264,56 @@ func catalogTools() -> [Tool] {
             ])
         ),
         Tool(
+            name: "set_assembly_metadata",
+            description: "Write XCAF document- or component-level metadata onto an OCAF document and save as binary .xbf. Mirrors occtkit set-metadata.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "inputPath": .object(["type": .string("string"), "description": .string("STEP / XBF input.")]),
+                    "outputPath": .object(["type": .string("string"), "description": .string("Output .xbf path.")]),
+                    "scope": .object([
+                        "type": .string("string"),
+                        "enum": .array([.string("document"), .string("component")]),
+                    ]),
+                    "componentId": .object(["type": .string("integer")]),
+                    "metadata": .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "title": .object(["type": .string("string")]),
+                            "drawnBy": .object(["type": .string("string")]),
+                            "material": .object(["type": .string("string")]),
+                            "weight": .object(["type": .string("number")]),
+                            "revision": .object(["type": .string("string")]),
+                            "partNumber": .object(["type": .string("string")]),
+                            "customAttrs": .object([
+                                "type": .string("object"),
+                                "additionalProperties": .object(["type": .string("string")]),
+                            ]),
+                        ]),
+                    ]),
+                ]),
+                "required": .array([.string("inputPath"), .string("outputPath"), .string("metadata")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "check_thickness",
+            description: "Wall-thickness analysis (sheet metal / casting / 3D-printing). UV-grid sample each face + cast inward ray to opposite wall. Reports min/max/mean and flags samples below minAcceptable.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "minAcceptable": .object(["type": .string("number")]),
+                    "samplingDensity": .object([
+                        "type": .string("string"),
+                        "enum": .array([.string("coarse"), .string("medium"), .string("fine")]),
+                    ]),
+                ]),
+                "required": .array([.string("bodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
             name: "render_preview",
             description: "Headless Metal render of the current scene (or a subset) to PNG. Uses OCCTSwiftViewport's OffscreenRenderer + OCCTSwiftTools' Shape→ViewportBody bridge.",
             inputSchema: .object([
@@ -681,6 +731,49 @@ func dispatch(callName: String, arguments: [String: Value]) async -> CallTool.Re
     switch callName {
     case "ping":
         return ToolText("pong").asCallToolResult()
+
+    case "set_assembly_metadata":
+        guard let inputPath = arguments["inputPath"]?.stringValue,
+              let outputPath = arguments["outputPath"]?.stringValue else {
+            return ToolText("set_assembly_metadata requires `inputPath` and `outputPath`.", isError: true).asCallToolResult()
+        }
+        let scope: AssemblyTools.MetadataScope = (arguments["scope"]?.stringValue)
+            .flatMap(AssemblyTools.MetadataScope.init(rawValue:)) ?? .document
+        let componentId: Int64? = arguments["componentId"]?.intValue.map(Int64.init)
+        var meta = AssemblyTools.AssemblyMetadata()
+        if case .object(let m)? = arguments["metadata"] {
+            meta.title = m["title"]?.stringValue
+            meta.drawnBy = m["drawnBy"]?.stringValue
+            meta.material = m["material"]?.stringValue
+            meta.weight = m["weight"]?.doubleValue
+            meta.revision = m["revision"]?.stringValue
+            meta.partNumber = m["partNumber"]?.stringValue
+            if case .object(let attrs)? = m["customAttrs"] {
+                for (k, v) in attrs {
+                    if let s = v.stringValue { meta.customAttrs[k] = s }
+                }
+            }
+        }
+        return await AssemblyTools.setAssemblyMetadata(
+            inputPath: inputPath,
+            outputPath: outputPath,
+            scope: scope,
+            componentId: componentId,
+            metadata: meta
+        ).asCallToolResult()
+
+    case "check_thickness":
+        guard let bodyId = arguments["bodyId"]?.stringValue else {
+            return ToolText("check_thickness requires `bodyId`.", isError: true).asCallToolResult()
+        }
+        let density: EngineeringTools.SamplingDensity =
+            (arguments["samplingDensity"]?.stringValue)
+                .flatMap(EngineeringTools.SamplingDensity.init(rawValue:)) ?? .medium
+        return await EngineeringTools.checkThickness(
+            bodyId: bodyId,
+            minAcceptable: arguments["minAcceptable"]?.doubleValue,
+            samplingDensity: density
+        ).asCallToolResult()
 
     case "render_preview":
         guard let outputPath = arguments["outputPath"]?.stringValue else {
