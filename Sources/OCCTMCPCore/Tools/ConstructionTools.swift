@@ -115,6 +115,18 @@ public enum ConstructionTools {
         }
 
         await history.snapshot(store: store)
+
+        // v0.6: record 1:1 identity history so remap_selection can
+        // resolve via TopologyGraph.findDerived rather than the
+        // centroid heuristic. Transforms preserve topology, so every
+        // post-mutation node maps to the same index pre-mutation.
+        let recordedBodyId = isInPlace ? bodyId : (options.outputBodyId ?? bodyId)
+        await HistoryRegistry.shared.recordIdentityHistory(
+            bodyId: recordedBodyId,
+            postMutationShape: current,
+            operationName: "transform_body"
+        )
+
         if !isInPlace, let newId = options.outputBodyId {
             let newFile = (outputPath as NSString).lastPathComponent
             let newBodies = manifest.bodies + [BodyDescriptor(

@@ -1,19 +1,20 @@
-// AnnotationsRenderer — turn the AnnotationsSidecar's primitives into
-// ViewportBody geometry that OffscreenRenderer can draw. v0.5 ships
-// support for the five primitive kinds whose synthesis is geometric
-// (no text, no per-point geometry blow-up):
+// AnnotationsRenderer — turn the AnnotationsSidecar's primitives and
+// dimensions into ViewportBody geometry that OffscreenRenderer can
+// draw. As of v0.6 the supported set is:
 //
 //   trihedron     — 3 cylinders + 3 spheres at the tips
 //   workPlane     — thin box at origin, oriented to the supplied normal
 //   axis          — cylinder from→to, radius from params
 //   boundingBox   — 12 thin cylinders forming the wireframe of the bbox
 //   diffMarker    — thin transparent box at the affected body's bbox
-//
-// Deferred to v0.6:
-//   pointCloud    — needs many small spheres; perf concern + would
-//                   benefit from a dedicated points pipeline upstream
-//   dimension     — needs text rendering, lives best in OffscreenRenderer
-//                   or as a 2D overlay pass
+//   pointCloud    — N small spheres (capped at maxPointCloudPoints to
+//                   avoid blowing up Metal vertex counts; over the cap
+//                   the cloud is silently truncated)
+//   dimension     — 3D leader lines + arrow caps for linear, angular,
+//                   and radial. No text label — the value is in the
+//                   add_dimension JSON response and the LLM already has
+//                   it. Text overlay belongs in OffscreenRenderer as a
+//                   2D pass; deferred until that surface exists.
 
 import Foundation
 import simd
@@ -24,9 +25,15 @@ import OCCTSwiftViewport
 @MainActor
 public enum AnnotationsRenderer {
 
-    /// Synthesise ViewportBodies for every renderable primitive in the
-    /// sidecar. Bodies are tagged with the primitive id (so future
-    /// hover/picking can identify them) and a representative colour.
+    /// Hard cap on per-cloud sphere count. Above this the cloud is
+    /// truncated so a stray million-point cloud doesn't take Metal
+    /// down. Future v0.7 can lift this with an upstream points
+    /// pipeline.
+    public static let maxPointCloudPoints = 256
+
+    /// Synthesise ViewportBodies for every renderable primitive +
+    /// dimension in the sidecar. Bodies are tagged with the
+    /// primitive/dimension id and a representative colour.
     public static func bodies(from sidecar: AnnotationsSidecar) -> [ViewportBody] {
         var out: [ViewportBody] = []
         for prim in sidecar.primitives {
@@ -41,9 +48,14 @@ public enum AnnotationsRenderer {
                 if let body = boundingBox(prim) { out.append(body) }
             case "diffMarker":
                 if let body = diffMarker(prim) { out.append(body) }
+            case "pointCloud":
+                if let body = pointCloud(prim) { out.append(body) }
             default:
-                continue   // pointCloud / future kinds — silently skip in v0.5
+                continue   // future kinds — silently skip
             }
+        }
+        for dim in sidecar.dimensions {
+            if let body = dimension(dim) { out.append(body) }
         }
         return out
     }
@@ -171,6 +183,127 @@ public enum AnnotationsRenderer {
             depth: padded.z
         ) else { return nil }
         return makeViewportBody(box, id: prim.id, color: color)
+    }
+
+    private static func pointCloud(_ prim: PrimitiveAnnotation) -> ViewportBody? {
+        guard case .array(let pts)? = prim.params["points"] else { return nil }
+        let radius = scalar(prim.params["pointRadius"]) ?? 0.5
+        let defaultColor = vec4(prim.params["defaultColor"]) ?? SIMD4<Float>(1, 0.85, 0.2, 1)
+        // Truncate over the cap so a stray giant cloud doesn't OOM Metal.
+        let limited = pts.prefix(maxPointCloudPoints)
+        var spheres: [Shape] = []
+        for entry in limited {
+            guard case .array(let coord) = entry, coord.count == 3,
+                  case .number(let x) = coord[0],
+                  case .number(let y) = coord[1],
+                  case .number(let z) = coord[2] else { continue }
+            if let s = Shape.sphere(center: SIMD3(x, y, z), radius: radius) {
+                spheres.append(s)
+            }
+        }
+        guard !spheres.isEmpty,
+              let compound = Shape.compound(spheres) else { return nil }
+        return makeViewportBody(compound, id: prim.id, color: defaultColor)
+    }
+
+    private static func dimension(_ dim: DimensionAnnotation) -> ViewportBody? {
+        guard let pts = dim.anchorPoints, !pts.isEmpty else { return nil }
+
+        // Convert anchor points back to SIMD3<Double>.
+        let world: [SIMD3<Double>] = pts.compactMap {
+            $0.count == 3 ? SIMD3($0[0], $0[1], $0[2]) : nil
+        }
+        guard !world.isEmpty else { return nil }
+
+        // Match the dimension layer to a consistent palette so the LLM
+        // can spot dimensions versus structural geometry at a glance.
+        let color = SIMD4<Float>(0.95, 0.65, 0.05, 1)
+
+        switch dim.kind {
+        case "linear":
+            guard world.count >= 2 else { return nil }
+            return linearDimension(from: world[0], to: world[1], id: dim.id, color: color)
+        case "angular":
+            guard world.count >= 3 else { return nil }
+            return angularDimension(armA: world[0], apex: world[1], armB: world[2], id: dim.id, color: color)
+        case "radial":
+            // We only stored the centre; without a point on the edge we
+            // can't draw a leader. Fall back to a small marker sphere
+            // at the centre so the LLM at least sees something.
+            return radialMarker(at: world[0], id: dim.id, color: color)
+        default:
+            return nil
+        }
+    }
+
+    // MARK: - Dimension helpers
+
+    private static func linearDimension(
+        from: SIMD3<Double>, to: SIMD3<Double>, id: String, color: SIMD4<Float>
+    ) -> ViewportBody? {
+        let direction = to - from
+        let length = simd_length(direction)
+        guard length > 1e-6 else { return nil }
+        let dir = simd_normalize(direction)
+        let radius = max(length * 0.005, 0.05)
+        guard let leader = Shape.cylinder(at: from, direction: dir, radius: radius, height: length) else { return nil }
+        // Two arrow caps as cones (use cylinders for v0.6 — small
+        // segments that visually flag the endpoints).
+        let capHeight = max(length * 0.05, 0.5)
+        let capRadius = radius * 3
+        let fromCap = Shape.cylinder(
+            at: from - dir * capHeight,
+            direction: dir,
+            radius: capRadius,
+            height: capHeight
+        )
+        let toCap = Shape.cylinder(
+            at: to,
+            direction: dir,
+            radius: capRadius,
+            height: capHeight
+        )
+        var pieces = [leader]
+        if let c = fromCap { pieces.append(c) }
+        if let c = toCap { pieces.append(c) }
+        guard let compound = Shape.compound(pieces) else {
+            return makeViewportBody(leader, id: id, color: color)
+        }
+        return makeViewportBody(compound, id: id, color: color)
+    }
+
+    private static func angularDimension(
+        armA: SIMD3<Double>, apex: SIMD3<Double>, armB: SIMD3<Double>,
+        id: String, color: SIMD4<Float>
+    ) -> ViewportBody? {
+        // Render the two arms as thin cylinders from apex outward and
+        // a small sphere at the apex. Skip the arc itself in v0.6 —
+        // arc geometry needs Wire.arcOf3Points or similar; the visual
+        // hint of "two arms meeting" is enough for LLM confirmation.
+        let armARadius: Double = max(simd_length(armA - apex) * 0.005, 0.05)
+        let armBRadius: Double = max(simd_length(armB - apex) * 0.005, 0.05)
+        let dirA = armA - apex
+        let dirB = armB - apex
+        let lenA = simd_length(dirA)
+        let lenB = simd_length(dirB)
+        guard lenA > 1e-6, lenB > 1e-6 else { return nil }
+        var pieces: [Shape] = []
+        if let c = Shape.cylinder(at: apex, direction: simd_normalize(dirA), radius: armARadius, height: lenA) {
+            pieces.append(c)
+        }
+        if let c = Shape.cylinder(at: apex, direction: simd_normalize(dirB), radius: armBRadius, height: lenB) {
+            pieces.append(c)
+        }
+        if let s = Shape.sphere(center: apex, radius: max(armARadius, armBRadius) * 1.5) {
+            pieces.append(s)
+        }
+        guard !pieces.isEmpty, let compound = Shape.compound(pieces) else { return nil }
+        return makeViewportBody(compound, id: id, color: color)
+    }
+
+    private static func radialMarker(at center: SIMD3<Double>, id: String, color: SIMD4<Float>) -> ViewportBody? {
+        guard let sphere = Shape.sphere(center: center, radius: 0.5) else { return nil }
+        return makeViewportBody(sphere, id: id, color: color)
     }
 
     // MARK: - Param helpers
