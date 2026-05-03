@@ -371,6 +371,145 @@ func catalogTools() -> [Tool] {
             ])
         ),
         Tool(
+            name: "remap_selection",
+            description: "Remap selectionIds across a scene mutation using a position-matching heuristic (closest-centroid within a body-bbox-relative tolerance). Returns each input mapped to zero or more new selectionIds plus a `fate` ('preserved' | 'approximate' | 'lost'). High-confidence for transforms / in-place edits; approximate for fillets / chamfers / boolean splits.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "selectionIds": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("string")]),
+                    ]),
+                    "toleranceMmFraction": .object([
+                        "type": .string("number"),
+                        "description": .string("Fraction of body bbox diagonal to use as the match tolerance. Default 0.01."),
+                    ]),
+                ]),
+                "required": .array([.string("selectionIds")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "add_dimension",
+            description: "Compute a linear / angular / radial dimension from selectionIds, persist to <output_dir>/annotations.json. render_preview overlays it. linear needs anchors.from + anchors.to; angular needs anchors.armA + anchors.apex + anchors.armB; radial needs anchors.circularEdge.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "kind": .object([
+                        "type": .string("string"),
+                        "enum": .array([.string("linear"), .string("angular"), .string("radial")]),
+                    ]),
+                    "anchors": .object([
+                        "type": .string("object"),
+                        "additionalProperties": .object(["type": .string("string")]),
+                    ]),
+                    "label": .object(["type": .string("string")]),
+                    "showDiameter": .object(["type": .string("boolean")]),
+                    "id": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("kind"), .string("anchors")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "add_scene_primitive",
+            description: "Add a Trihedron / WorkPlane / Axis / PointCloud annotation to <output_dir>/annotations.json. render_preview overlays it. params shape mirrors the OCCTSwiftAIS init: trihedron {origin,axisLength}; workPlane {origin,normal,size,color}; axis {from,to,color,radius}; pointCloud {points,colors?,pointRadius}.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "kind": .object([
+                        "type": .string("string"),
+                        "enum": .array([.string("trihedron"), .string("workPlane"), .string("axis"), .string("pointCloud")]),
+                    ]),
+                    "params": .object([
+                        "type": .string("object"),
+                    ]),
+                    "id": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("kind"), .string("params")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "remove_scene_annotation",
+            description: "Remove a dimension or scene primitive from <output_dir>/annotations.json by id. Returns whether the id was found.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "id": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("id")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "show_bounding_box",
+            description: "Compute a body's axis-aligned bounding box and register it as a `boundingBox` scene primitive. Returns min/max/extent/center inline so the LLM can reason about the body's footprint without a separate compute_metrics call.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "primitiveId": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("bodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "diff_overlay",
+            description: "Visualise a recent scene change. For each body added/removed/modified since N runs ago, register a tinted scene primitive at its bbox center (added=green, removed=red, changed=yellow). Returns the lists of affected body ids plus the registered primitive ids.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "since": .object([
+                        "type": .string("integer"),
+                        "minimum": .int(1),
+                    ]),
+                ]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "select_by_feature",
+            description: "Run AAG feature recognition (recognize_features) and register a selectionId for each detected hole / pocket. Returns selectionIds the LLM can then dimension or refer back to without re-running query_topology.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "kinds": .object([
+                        "type": .string("array"),
+                        "items": .object([
+                            "type": .string("string"),
+                            "enum": .array([.string("pocket"), .string("hole")]),
+                        ]),
+                    ]),
+                ]),
+                "required": .array([.string("bodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "select_topology",
+            description: "Pick faces / edges / vertices on a scene body matching criteria. Returns server-tracked selectionIds (sel:<bodyId>#<kind>[<idx>]) plus an anchor snapshot — the LLM can refer back via remap_selection / add_dimension.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "kind": .object([
+                        "type": .string("string"),
+                        "enum": .array([.string("body"), .string("face"), .string("edge"), .string("vertex")]),
+                    ]),
+                    "filter": .object([
+                        "type": .string("object"),
+                        "description": .string("face: surfaceType, minArea, maxArea, normalDirection, normalTolerance. edge: curveType, minLength, maxLength."),
+                    ]),
+                    "limit": .object(["type": .string("integer"), "minimum": .int(1)]),
+                ]),
+                "required": .array([.string("bodyId"), .string("kind")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
             name: "ping",
             description: "Sanity-check tool — returns 'pong' so callers can verify the OCCTMCP Swift server is alive.",
             inputSchema: .object([
@@ -697,6 +836,26 @@ struct ToolCatalog: Encodable {
     let count: Int
 }
 
+/// Recursively convert an MCP `Value` (the dynamic JSON wrapper) into an
+/// `[String: AnyCodable]` so it can land in `PrimitiveAnnotation.params`.
+func paramsToAnyCodable(_ value: Value?) -> [String: AnyCodable] {
+    guard case .object(let obj)? = value else { return [:] }
+    return obj.mapValues(toAnyCodable)
+}
+func toAnyCodable(_ value: Value) -> AnyCodable {
+    switch value {
+    case .bool(let v):    return .bool(v)
+    case .int(let v):     return .number(Double(v))
+    case .double(let v):  return .number(v)
+    case .string(let v):  return .string(v)
+    case .array(let arr): return .array(arr.map(toAnyCodable))
+    case .object(let o):  return .object(o.mapValues(toAnyCodable))
+    case .null:           return .null
+    case .data:           return .null  // base64 blobs not used by annotations params
+    @unknown default:     return .null
+    }
+}
+
 func parseRenderOptions(_ value: Value?) -> RenderPreviewTool.Options {
     var opts = RenderPreviewTool.Options()
     guard case .object(let o)? = value else { return opts }
@@ -731,6 +890,95 @@ func dispatch(callName: String, arguments: [String: Value]) async -> CallTool.Re
     switch callName {
     case "ping":
         return ToolText("pong").asCallToolResult()
+
+    case "show_bounding_box":
+        guard let bodyId = arguments["bodyId"]?.stringValue else {
+            return ToolText("show_bounding_box requires `bodyId`.", isError: true).asCallToolResult()
+        }
+        return await GapFillerTools.showBoundingBox(
+            bodyId: bodyId,
+            primitiveId: arguments["primitiveId"]?.stringValue
+        ).asCallToolResult()
+
+    case "diff_overlay":
+        let since = arguments["since"]?.intValue ?? 1
+        return await GapFillerTools.diffOverlay(since: since).asCallToolResult()
+
+    case "select_by_feature":
+        guard let bodyId = arguments["bodyId"]?.stringValue else {
+            return ToolText("select_by_feature requires `bodyId`.", isError: true).asCallToolResult()
+        }
+        let kinds = arguments["kinds"]?.arrayValue?.compactMap { $0.stringValue }
+        return await GapFillerTools.selectByFeature(bodyId: bodyId, kinds: kinds).asCallToolResult()
+
+    case "add_dimension":
+        guard let kindStr = arguments["kind"]?.stringValue,
+              let kind = AnnotationsTools.DimensionKind(rawValue: kindStr) else {
+            return ToolText("add_dimension requires `kind`.", isError: true).asCallToolResult()
+        }
+        var anchors: [String: String] = [:]
+        if case .object(let a)? = arguments["anchors"] {
+            for (k, v) in a {
+                if let s = v.stringValue { anchors[k] = s }
+            }
+        }
+        return await AnnotationsTools.addDimension(
+            kind: kind,
+            anchors: anchors,
+            label: arguments["label"]?.stringValue,
+            showDiameter: arguments["showDiameter"]?.boolValue ?? false,
+            id: arguments["id"]?.stringValue
+        ).asCallToolResult()
+
+    case "add_scene_primitive":
+        guard let kindStr = arguments["kind"]?.stringValue,
+              let kind = AnnotationsTools.PrimitiveKind(rawValue: kindStr) else {
+            return ToolText("add_scene_primitive requires `kind`.", isError: true).asCallToolResult()
+        }
+        let params = paramsToAnyCodable(arguments["params"])
+        return await AnnotationsTools.addScenePrimitive(
+            kind: kind, params: params,
+            id: arguments["id"]?.stringValue
+        ).asCallToolResult()
+
+    case "remove_scene_annotation":
+        guard let id = arguments["id"]?.stringValue else {
+            return ToolText("remove_scene_annotation requires `id`.", isError: true).asCallToolResult()
+        }
+        return await AnnotationsTools.removeSceneAnnotation(id: id).asCallToolResult()
+
+    case "remap_selection":
+        guard let ids = arguments["selectionIds"]?.arrayValue?.compactMap({ $0.stringValue }), !ids.isEmpty else {
+            return ToolText("remap_selection requires `selectionIds` array.", isError: true).asCallToolResult()
+        }
+        let tol = arguments["toleranceMmFraction"]?.doubleValue ?? 0.01
+        return await RemapTools.remapSelection(
+            selectionIds: ids, toleranceMmFraction: tol
+        ).asCallToolResult()
+
+    case "select_topology":
+        guard let bodyId = arguments["bodyId"]?.stringValue,
+              let kind = arguments["kind"]?.stringValue else {
+            return ToolText("select_topology requires `bodyId` and `kind`.", isError: true).asCallToolResult()
+        }
+        var filter = SelectionTools.Filter()
+        if case .object(let f)? = arguments["filter"] {
+            filter.surfaceType = f["surfaceType"]?.stringValue
+            filter.curveType = f["curveType"]?.stringValue
+            filter.minArea = f["minArea"]?.doubleValue
+            filter.maxArea = f["maxArea"]?.doubleValue
+            filter.minLength = f["minLength"]?.doubleValue
+            filter.maxLength = f["maxLength"]?.doubleValue
+            if let arr = f["normalDirection"]?.arrayValue, arr.count == 3,
+               let x = arr[0].doubleValue, let y = arr[1].doubleValue, let z = arr[2].doubleValue {
+                filter.normalDirection = SIMD3(x, y, z)
+            }
+            filter.normalTolerance = f["normalTolerance"]?.doubleValue
+        }
+        let limit = arguments["limit"]?.intValue
+        return await SelectionTools.selectTopology(
+            bodyId: bodyId, kind: kind, filter: filter, limit: limit
+        ).asCallToolResult()
 
     case "set_assembly_metadata":
         guard let inputPath = arguments["inputPath"]?.stringValue,
