@@ -14,6 +14,8 @@ public actor SceneHistory {
 
     public static let maxSnapshots = 10
 
+    public init() {}
+
     private var snapshots: [ScriptManifest] = []
 
     /// Capture the current manifest into the ring. No-op if the

@@ -41,10 +41,10 @@ struct SceneToolsTests {
     @Test("remove_body deletes manifest entry and BREP file")
     func removesBody() async throws {
         let store = try freshScene()
-        await SceneHistory.shared.clear()
+        let history = SceneHistory()
         defer { try? FileManager.default.removeItem(atPath: dirOf(store)) }
 
-        let result = await SceneTools.removeBody(bodyId: "alpha", store: store)
+        let result = await SceneTools.removeBody(bodyId: "alpha", store: store, history: history)
         #expect(result.text.contains("Removed body \"alpha\""))
 
         let updated = try store.read()
@@ -57,10 +57,10 @@ struct SceneToolsTests {
     @Test("remove_body errors on unknown id")
     func removesBodyMissing() async throws {
         let store = try freshScene()
-        await SceneHistory.shared.clear()
+        let history = SceneHistory()
         defer { try? FileManager.default.removeItem(atPath: dirOf(store)) }
 
-        let result = await SceneTools.removeBody(bodyId: "nope", store: store)
+        let result = await SceneTools.removeBody(bodyId: "nope", store: store, history: history)
         #expect(result.text.contains("Body not found: nope"))
     }
 
@@ -69,10 +69,10 @@ struct SceneToolsTests {
     @Test("clear_scene removes every body and its BREP")
     func clearScene() async throws {
         let store = try freshScene()
-        await SceneHistory.shared.clear()
+        let history = SceneHistory()
         defer { try? FileManager.default.removeItem(atPath: dirOf(store)) }
 
-        let result = await SceneTools.clearScene(keepHistory: false, store: store)
+        let result = await SceneTools.clearScene(keepHistory: false, store: store, history: history)
         #expect(result.text.contains("Cleared 2 bodies"))
 
         let updated = try store.read()
@@ -86,11 +86,11 @@ struct SceneToolsTests {
     @Test("rename_body changes the id")
     func renameBody() async throws {
         let store = try freshScene()
-        await SceneHistory.shared.clear()
+        let history = SceneHistory()
         defer { try? FileManager.default.removeItem(atPath: dirOf(store)) }
 
         let result = await SceneTools.renameBody(
-            bodyId: "alpha", newBodyId: "alpha2", store: store)
+            bodyId: "alpha", newBodyId: "alpha2", store: store, history: history)
         #expect(result.text.contains("\"alpha\" → \"alpha2\""))
 
         let updated = try store.read()
@@ -100,11 +100,11 @@ struct SceneToolsTests {
     @Test("rename_body rejects collisions")
     func renameBodyCollision() async throws {
         let store = try freshScene()
-        await SceneHistory.shared.clear()
+        let history = SceneHistory()
         defer { try? FileManager.default.removeItem(atPath: dirOf(store)) }
 
         let result = await SceneTools.renameBody(
-            bodyId: "alpha", newBodyId: "beta", store: store)
+            bodyId: "alpha", newBodyId: "beta", store: store, history: history)
         #expect(result.text.contains("already exists"))
     }
 
@@ -113,13 +113,14 @@ struct SceneToolsTests {
     @Test("set_appearance updates color, opacity, and name")
     func setAppearanceUpdates() async throws {
         let store = try freshScene()
-        await SceneHistory.shared.clear()
+        let history = SceneHistory()
         defer { try? FileManager.default.removeItem(atPath: dirOf(store)) }
 
         let result = await SceneTools.setAppearance(
             bodyId: "alpha",
             update: .init(color: [0.2, 0.4, 0.6], opacity: 0.5, name: "Alpha part"),
-            store: store
+            store: store,
+            history: history
         )
         #expect(result.text.contains("Updated appearance of \"alpha\""))
 
@@ -132,11 +133,11 @@ struct SceneToolsTests {
     @Test("set_appearance rejects empty input")
     func setAppearanceEmpty() async throws {
         let store = try freshScene()
-        await SceneHistory.shared.clear()
+        let history = SceneHistory()
         defer { try? FileManager.default.removeItem(atPath: dirOf(store)) }
 
         let result = await SceneTools.setAppearance(
-            bodyId: "alpha", update: .init(), store: store)
+            bodyId: "alpha", update: .init(), store: store, history: history)
         #expect(result.text.contains("No appearance fields provided"))
     }
 
@@ -145,11 +146,11 @@ struct SceneToolsTests {
     @Test("compare_versions reports added bodies")
     func compareVersionsAdds() async throws {
         let store = try freshScene()
-        await SceneHistory.shared.clear()
+        let history = SceneHistory()
         defer { try? FileManager.default.removeItem(atPath: dirOf(store)) }
 
         // Snapshot first, then mutate
-        await SceneHistory.shared.snapshot(store: store)
+        await history.snapshot(store: store)
         let cur = try store.read()!
         var bodies = cur.bodies
         bodies.append(BodyDescriptor(id: "gamma", file: "gamma.brep"))
@@ -159,7 +160,7 @@ struct SceneToolsTests {
         )
         try store.write(updated)
 
-        let result = await SceneTools.compareVersions(since: 1, store: store)
+        let result = await SceneTools.compareVersions(since: 1, store: store, history: history)
         #expect(result.text.contains("\"added\""))
         #expect(result.text.contains("\"gamma\""))
     }
@@ -167,10 +168,10 @@ struct SceneToolsTests {
     @Test("compare_versions errors when history is too shallow")
     func compareVersionsShallow() async throws {
         let store = try freshScene()
-        await SceneHistory.shared.clear()
+        let history = SceneHistory()
         defer { try? FileManager.default.removeItem(atPath: dirOf(store)) }
 
-        let result = await SceneTools.compareVersions(since: 5, store: store)
+        let result = await SceneTools.compareVersions(since: 5, store: store, history: history)
         #expect(result.text.contains("Not enough history"))
     }
 }

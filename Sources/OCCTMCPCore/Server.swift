@@ -43,6 +43,95 @@ func registerTools(on server: Server) async {
 func catalogTools() -> [Tool] {
     return [
         Tool(
+            name: "get_scene",
+            description: "Read the current scene manifest (bodies, colors, materials).",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([:]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "get_script",
+            description: "Return the source of the most recent Swift CAD script executed in this session.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([:]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "export_model",
+            description: "List exported model files (BREP, STEP, STL, OBJ, IGES, glTF, JSON) from the current output directory.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([:]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "validate_geometry",
+            description: "Per-body topology validation. Wraps GraphIO + TopologyGraph.validate() in-process.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object([
+                        "type": .string("string"),
+                        "description": .string("Specific body to validate. If omitted, validates every BREP body."),
+                    ]),
+                ]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "recognize_features",
+            description: "Detect pockets and holes via OCCTSwift's AAG heuristics.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "kinds": .object([
+                        "type": .string("array"),
+                        "items": .object([
+                            "type": .string("string"),
+                            "enum": .array([.string("pocket"), .string("hole")]),
+                        ]),
+                    ]),
+                ]),
+                "required": .array([.string("bodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "analyze_clearance",
+            description: "Pairwise interference / minimum-clearance check between 2+ bodies. Each pair gets minDistance + (optionally) up to 16 contacts.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyIds": .object([
+                        "type": .string("array"),
+                        "minItems": .int(2),
+                        "items": .object(["type": .string("string")]),
+                    ]),
+                    "computeContacts": .object(["type": .string("boolean")]),
+                ]),
+                "required": .array([.string("bodyIds")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "graph_validate",
+            description: "Raw-path topology validation. Pass an absolute BREP path; use validate_geometry for the scene-aware version.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "brep_path": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("brep_path")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
             name: "ping",
             description: "Sanity-check tool — returns 'pong' so callers can verify the OCCTMCP Swift server is alive.",
             inputSchema: .object([
@@ -368,6 +457,42 @@ func dispatch(callName: String, arguments: [String: Value]) async -> CallTool.Re
     switch callName {
     case "ping":
         return ToolText("pong").asCallToolResult()
+
+    case "get_scene":
+        return await CoreTools.getScene().asCallToolResult()
+
+    case "get_script":
+        return await CoreTools.getScript().asCallToolResult()
+
+    case "export_model":
+        return await CoreTools.exportModel().asCallToolResult()
+
+    case "validate_geometry":
+        return await AnalysisTools.validateGeometry(
+            bodyId: arguments["bodyId"]?.stringValue
+        ).asCallToolResult()
+
+    case "recognize_features":
+        guard let bodyId = arguments["bodyId"]?.stringValue else {
+            return ToolText("recognize_features requires `bodyId`.", isError: true).asCallToolResult()
+        }
+        let kinds = arguments["kinds"]?.arrayValue?.compactMap { $0.stringValue }
+        return await AnalysisTools.recognizeFeatures(bodyId: bodyId, kinds: kinds).asCallToolResult()
+
+    case "analyze_clearance":
+        guard let ids = arguments["bodyIds"]?.arrayValue?.compactMap({ $0.stringValue }), !ids.isEmpty else {
+            return ToolText("analyze_clearance requires `bodyIds` array.", isError: true).asCallToolResult()
+        }
+        return await AnalysisTools.analyzeClearance(
+            bodyIds: ids,
+            computeContacts: arguments["computeContacts"]?.boolValue ?? true
+        ).asCallToolResult()
+
+    case "graph_validate":
+        guard let path = arguments["brep_path"]?.stringValue else {
+            return ToolText("graph_validate requires `brep_path`.", isError: true).asCallToolResult()
+        }
+        return await AnalysisTools.graphValidate(brepPath: path).asCallToolResult()
 
     case "remove_body":
         guard let bodyId = arguments["bodyId"]?.stringValue else {
