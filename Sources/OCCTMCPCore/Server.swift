@@ -132,6 +132,58 @@ func catalogTools() -> [Tool] {
             ])
         ),
         Tool(
+            name: "graph_compact",
+            description: "Compact a BREP's topology graph (drops unreferenced nodes); writes the rebuilt shape to output_path.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "brep_path": .object(["type": .string("string")]),
+                    "output_path": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("brep_path"), .string("output_path")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "graph_dedup",
+            description: "Deduplicate shared surface/curve geometry in a BREP's topology graph; writes the rebuilt shape to output_path.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "brep_path": .object(["type": .string("string")]),
+                    "output_path": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("brep_path"), .string("output_path")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "feature_recognize",
+            description: "Detect pockets and holes via AAG heuristics. Pass an absolute BREP path; recognize_features is the scene-aware variant.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "brep_path": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("brep_path")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "get_api_reference",
+            description: "Returns a catalog of every MCP tool this server exposes (category=mcp_tools), or a pointer to OCCTSwift docs for the OCCT API categories. Use mcp_tools for LLM auto-discovery.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "category": .object([
+                        "type": .string("string"),
+                        "description": .string("'mcp_tools' for the live tool catalog; any other value returns a pointer to the OCCTSwift sources / docs."),
+                    ]),
+                ]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
             name: "ping",
             description: "Sanity-check tool — returns 'pong' so callers can verify the OCCTMCP Swift server is alive.",
             inputSchema: .object([
@@ -453,10 +505,32 @@ func catalogTools() -> [Tool] {
     ]
 }
 
+struct ToolCatalog: Encodable {
+    let tools: [Tool]
+    let count: Int
+}
+
 func dispatch(callName: String, arguments: [String: Value]) async -> CallTool.Result {
     switch callName {
     case "ping":
         return ToolText("pong").asCallToolResult()
+
+    case "get_api_reference":
+        let category = arguments["category"]?.stringValue ?? "mcp_tools"
+        if category == "mcp_tools" {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let payload = ToolCatalog(tools: catalogTools(), count: catalogTools().count)
+            if let data = try? encoder.encode(payload),
+               let str = String(data: data, encoding: .utf8) {
+                return ToolText(str).asCallToolResult()
+            }
+            return ToolText("Failed to encode tool catalog.", isError: true).asCallToolResult()
+        }
+        return ToolText(
+            "OCCTSwift API documentation lives at https://github.com/gsdali/OCCTSwift — browse the public func declarations there. " +
+                "Pass category=\"mcp_tools\" to get this server's live tool catalog as JSON."
+        ).asCallToolResult()
 
     case "get_scene":
         return await CoreTools.getScene().asCallToolResult()
@@ -493,6 +567,26 @@ func dispatch(callName: String, arguments: [String: Value]) async -> CallTool.Re
             return ToolText("graph_validate requires `brep_path`.", isError: true).asCallToolResult()
         }
         return await AnalysisTools.graphValidate(brepPath: path).asCallToolResult()
+
+    case "graph_compact":
+        guard let inP = arguments["brep_path"]?.stringValue,
+              let outP = arguments["output_path"]?.stringValue else {
+            return ToolText("graph_compact requires `brep_path` and `output_path`.", isError: true).asCallToolResult()
+        }
+        return await AnalysisTools.graphCompact(brepPath: inP, outputPath: outP).asCallToolResult()
+
+    case "graph_dedup":
+        guard let inP = arguments["brep_path"]?.stringValue,
+              let outP = arguments["output_path"]?.stringValue else {
+            return ToolText("graph_dedup requires `brep_path` and `output_path`.", isError: true).asCallToolResult()
+        }
+        return await AnalysisTools.graphDedup(brepPath: inP, outputPath: outP).asCallToolResult()
+
+    case "feature_recognize":
+        guard let path = arguments["brep_path"]?.stringValue else {
+            return ToolText("feature_recognize requires `brep_path`.", isError: true).asCallToolResult()
+        }
+        return await AnalysisTools.featureRecognize(brepPath: path).asCallToolResult()
 
     case "remove_body":
         guard let bodyId = arguments["bodyId"]?.stringValue else {

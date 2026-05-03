@@ -215,4 +215,103 @@ public enum AnalysisTools {
             return .init("graph_validate failed: \(error.localizedDescription)", isError: true)
         }
     }
+
+    public struct GraphCompactPayload: Encodable {
+        public let nodesBefore: Int
+        public let nodesAfter: Int
+        public let removed: Removed
+        public let output: String
+        public struct Removed: Encodable {
+            public let vertices: Int
+            public let edges: Int
+            public let faces: Int
+        }
+    }
+
+    public static func graphCompact(brepPath: String, outputPath: String) async -> ToolText {
+        guard FileManager.default.fileExists(atPath: brepPath) else {
+            return .init("BREP file not found: \(brepPath)")
+        }
+        do {
+            let shape = try Shape.loadBREP(fromPath: brepPath)
+            let graph = try GraphIO.buildGraph(from: shape)
+            let nodesBefore = graph.stats.totalNodes
+            let r = graph.compact()
+            guard let rebuilt = GraphIO.rebuildShape(from: graph) else {
+                return .init("graph_compact failed: rebuild produced nil shape.", isError: true)
+            }
+            try GraphIO.writeBREP(rebuilt, to: outputPath)
+            return IntrospectionTools.encode(GraphCompactPayload(
+                nodesBefore: nodesBefore,
+                nodesAfter: r.nodesAfter,
+                removed: .init(
+                    vertices: r.removedVertices,
+                    edges: r.removedEdges,
+                    faces: r.removedFaces
+                ),
+                output: outputPath
+            ))
+        } catch {
+            return .init("graph_compact failed: \(error.localizedDescription)", isError: true)
+        }
+    }
+
+    public struct GraphDedupPayload: Encodable {
+        public let canonicalSurfaces: Int
+        public let canonicalCurves: Int
+        public let surfaceRewrites: Int
+        public let curveRewrites: Int
+        public let output: String
+    }
+
+    public static func graphDedup(brepPath: String, outputPath: String) async -> ToolText {
+        guard FileManager.default.fileExists(atPath: brepPath) else {
+            return .init("BREP file not found: \(brepPath)")
+        }
+        do {
+            let shape = try Shape.loadBREP(fromPath: brepPath)
+            let graph = try GraphIO.buildGraph(from: shape)
+            let r = graph.deduplicate()
+            guard let rebuilt = GraphIO.rebuildShape(from: graph) else {
+                return .init("graph_dedup failed: rebuild produced nil shape.", isError: true)
+            }
+            try GraphIO.writeBREP(rebuilt, to: outputPath)
+            return IntrospectionTools.encode(GraphDedupPayload(
+                canonicalSurfaces: r.canonicalSurfaces,
+                canonicalCurves: r.canonicalCurves,
+                surfaceRewrites: r.surfaceRewrites,
+                curveRewrites: r.curveRewrites,
+                output: outputPath
+            ))
+        } catch {
+            return .init("graph_dedup failed: \(error.localizedDescription)", isError: true)
+        }
+    }
+
+    public static func featureRecognize(brepPath: String) async -> ToolText {
+        guard FileManager.default.fileExists(atPath: brepPath) else {
+            return .init("BREP file not found: \(brepPath)")
+        }
+        do {
+            let shape = try Shape.loadBREP(fromPath: brepPath)
+            let aag = AAG(shape: shape)
+            return IntrospectionTools.encode(FeatureReport(
+                bodyId: brepPath,
+                pockets: aag.detectPockets().map {
+                    .init(
+                        floorFaceIndex: $0.floorFaceIndex,
+                        wallFaceIndices: $0.wallFaceIndices,
+                        zLevel: $0.zLevel,
+                        depth: $0.depth,
+                        isOpen: $0.isOpen
+                    )
+                },
+                holes: aag.detectHoles().map {
+                    .init(faceIndex: $0.faceIndex, radius: $0.radius, depth: $0.depth)
+                }
+            ))
+        } catch {
+            return .init("feature_recognize failed: \(error.localizedDescription)", isError: true)
+        }
+    }
 }
