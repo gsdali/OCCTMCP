@@ -443,6 +443,52 @@ func catalogTools() -> [Tool] {
             ])
         ),
         Tool(
+            name: "show_bounding_box",
+            description: "Compute a body's axis-aligned bounding box and register it as a `boundingBox` scene primitive. Returns min/max/extent/center inline so the LLM can reason about the body's footprint without a separate compute_metrics call.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "primitiveId": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("bodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "diff_overlay",
+            description: "Visualise a recent scene change. For each body added/removed/modified since N runs ago, register a tinted scene primitive at its bbox center (added=green, removed=red, changed=yellow). Returns the lists of affected body ids plus the registered primitive ids.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "since": .object([
+                        "type": .string("integer"),
+                        "minimum": .int(1),
+                    ]),
+                ]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "select_by_feature",
+            description: "Run AAG feature recognition (recognize_features) and register a selectionId for each detected hole / pocket. Returns selectionIds the LLM can then dimension or refer back to without re-running query_topology.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "kinds": .object([
+                        "type": .string("array"),
+                        "items": .object([
+                            "type": .string("string"),
+                            "enum": .array([.string("pocket"), .string("hole")]),
+                        ]),
+                    ]),
+                ]),
+                "required": .array([.string("bodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
             name: "select_topology",
             description: "Pick faces / edges / vertices on a scene body matching criteria. Returns server-tracked selectionIds (sel:<bodyId>#<kind>[<idx>]) plus an anchor snapshot — the LLM can refer back via remap_selection / add_dimension.",
             inputSchema: .object([
@@ -805,6 +851,7 @@ func toAnyCodable(_ value: Value) -> AnyCodable {
     case .array(let arr): return .array(arr.map(toAnyCodable))
     case .object(let o):  return .object(o.mapValues(toAnyCodable))
     case .null:           return .null
+    case .data:           return .null  // base64 blobs not used by annotations params
     @unknown default:     return .null
     }
 }
@@ -843,6 +890,26 @@ func dispatch(callName: String, arguments: [String: Value]) async -> CallTool.Re
     switch callName {
     case "ping":
         return ToolText("pong").asCallToolResult()
+
+    case "show_bounding_box":
+        guard let bodyId = arguments["bodyId"]?.stringValue else {
+            return ToolText("show_bounding_box requires `bodyId`.", isError: true).asCallToolResult()
+        }
+        return await GapFillerTools.showBoundingBox(
+            bodyId: bodyId,
+            primitiveId: arguments["primitiveId"]?.stringValue
+        ).asCallToolResult()
+
+    case "diff_overlay":
+        let since = arguments["since"]?.intValue ?? 1
+        return await GapFillerTools.diffOverlay(since: since).asCallToolResult()
+
+    case "select_by_feature":
+        guard let bodyId = arguments["bodyId"]?.stringValue else {
+            return ToolText("select_by_feature requires `bodyId`.", isError: true).asCallToolResult()
+        }
+        let kinds = arguments["kinds"]?.arrayValue?.compactMap { $0.stringValue }
+        return await GapFillerTools.selectByFeature(bodyId: bodyId, kinds: kinds).asCallToolResult()
 
     case "add_dimension":
         guard let kindStr = arguments["kind"]?.stringValue,
