@@ -1,0 +1,881 @@
+// OCCTMCPCore — server factory + tool registration for the OCCTMCP MCP
+// server. Tools are registered against a single Server instance via the
+// MCP SDK's withMethodHandler API.
+//
+// The Swift port grows tool by tool, mirroring the existing Node
+// implementation under src/. Once the Swift side reaches feature parity
+// the Node code under src/ can be retired.
+
+import Foundation
+import MCP
+
+public enum OCCTMCPVersion {
+    public static let serverName = "occtmcp"
+    public static let serverVersion = "0.1.0"
+}
+
+/// Build a fully-configured MCP server with every OCCTMCP tool registered.
+/// Caller is responsible for `start(transport:)` and `waitUntilCompleted()`.
+public func makeOCCTMCPServer() async -> Server {
+    let server = Server(
+        name: OCCTMCPVersion.serverName,
+        version: OCCTMCPVersion.serverVersion,
+        capabilities: .init(
+            tools: .init(listChanged: false)
+        )
+    )
+    await registerTools(on: server)
+    return server
+}
+
+func registerTools(on server: Server) async {
+    let tools = catalogTools()
+
+    await server.withMethodHandler(ListTools.self) { _ in
+        return .init(tools: tools)
+    }
+
+    await server.withMethodHandler(CallTool.self) { params in
+        return await dispatch(callName: params.name, arguments: params.arguments ?? [:])
+    }
+}
+
+func catalogTools() -> [Tool] {
+    return [
+        Tool(
+            name: "get_scene",
+            description: "Read the current scene manifest (bodies, colors, materials).",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([:]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "get_script",
+            description: "Return the source of the most recent Swift CAD script executed in this session.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([:]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "export_model",
+            description: "List exported model files (BREP, STEP, STL, OBJ, IGES, glTF, JSON) from the current output directory.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([:]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "validate_geometry",
+            description: "Per-body topology validation. Wraps GraphIO + TopologyGraph.validate() in-process.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object([
+                        "type": .string("string"),
+                        "description": .string("Specific body to validate. If omitted, validates every BREP body."),
+                    ]),
+                ]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "recognize_features",
+            description: "Detect pockets and holes via OCCTSwift's AAG heuristics.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "kinds": .object([
+                        "type": .string("array"),
+                        "items": .object([
+                            "type": .string("string"),
+                            "enum": .array([.string("pocket"), .string("hole")]),
+                        ]),
+                    ]),
+                ]),
+                "required": .array([.string("bodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "analyze_clearance",
+            description: "Pairwise interference / minimum-clearance check between 2+ bodies. Each pair gets minDistance + (optionally) up to 16 contacts.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyIds": .object([
+                        "type": .string("array"),
+                        "minItems": .int(2),
+                        "items": .object(["type": .string("string")]),
+                    ]),
+                    "computeContacts": .object(["type": .string("boolean")]),
+                ]),
+                "required": .array([.string("bodyIds")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "graph_validate",
+            description: "Raw-path topology validation. Pass an absolute BREP path; use validate_geometry for the scene-aware version.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "brep_path": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("brep_path")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "graph_compact",
+            description: "Compact a BREP's topology graph (drops unreferenced nodes); writes the rebuilt shape to output_path.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "brep_path": .object(["type": .string("string")]),
+                    "output_path": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("brep_path"), .string("output_path")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "graph_dedup",
+            description: "Deduplicate shared surface/curve geometry in a BREP's topology graph; writes the rebuilt shape to output_path.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "brep_path": .object(["type": .string("string")]),
+                    "output_path": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("brep_path"), .string("output_path")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "feature_recognize",
+            description: "Detect pockets and holes via AAG heuristics. Pass an absolute BREP path; recognize_features is the scene-aware variant.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "brep_path": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("brep_path")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "get_api_reference",
+            description: "Returns a catalog of every MCP tool this server exposes (category=mcp_tools), or a pointer to OCCTSwift docs for the OCCT API categories. Use mcp_tools for LLM auto-discovery.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "category": .object([
+                        "type": .string("string"),
+                        "description": .string("'mcp_tools' for the live tool catalog; any other value returns a pointer to the OCCTSwift sources / docs."),
+                    ]),
+                ]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "apply_feature",
+            description: "Apply a single feature spec (drill / fillet / chamfer / extrude / revolve / thread / boolean) to a scene body via OCCTSwift's FeatureReconstructor. Without outputBodyId, replaces in place; with outputBodyId, adds a new body.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "feature": .object([
+                        "type": .string("object"),
+                        "description": .string("FeatureSpec object with a 'kind' discriminator. See OCCTSwift/Sources/OCCTSwift/FeatureReconstructor.swift for the schema."),
+                    ]),
+                    "outputBodyId": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("bodyId"), .string("feature")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "inspect_assembly",
+            description: "Walk an XCAF assembly hierarchy. Pass either a scene bodyId (BREP — degenerate single-node response) or an inputPath (STEP / IGES / XBF for the full tree).",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "inputPath": .object(["type": .string("string")]),
+                    "depth": .object(["type": .string("integer"), "minimum": .int(0)]),
+                ]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "generate_drawing",
+            description: "Render a multi-view ISO 128-30 DXF technical drawing for a scene body. Pass a DrawingSpec object (sheet, title, views, sections, dimensions, ...). The tool injects shape + output into the spec.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "outputPath": .object(["type": .string("string")]),
+                    "spec": .object([
+                        "type": .string("object"),
+                        "description": .string("DrawingSpec object: { sheet, title?, views, sections?, dimensions?, ... }. See OCCTSwiftScripts/Sources/DrawingComposer/Spec.swift."),
+                    ]),
+                ]),
+                "required": .array([.string("bodyId"), .string("outputPath"), .string("spec")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "ping",
+            description: "Sanity-check tool — returns 'pong' so callers can verify the OCCTMCP Swift server is alive.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([:]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "remove_body",
+            description: "Delete a body from the current scene by id. Removes the body's BREP file from the output directory and re-emits the manifest (triggers viewport reload).",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object([
+                        "type": .string("string"),
+                        "description": .string("The id of the body to remove."),
+                    ]),
+                ]),
+                "required": .array([.string("bodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "clear_scene",
+            description: "Remove every body from the current scene. Optionally preserves the compare_versions history ring buffer.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "keepHistory": .object([
+                        "type": .string("boolean"),
+                        "description": .string("If true, keep the compare_versions history ring. Default false."),
+                    ]),
+                ]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "rename_body",
+            description: "Change a body's id in the scene manifest. Fails if the new id is already in use.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "newBodyId": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("bodyId"), .string("newBodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "set_appearance",
+            description: "Update color / opacity / roughness / metallic / display name for a scene body without re-running a script. The viewport reloads automatically.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "color": .object([
+                        "type": .string("array"),
+                        "description": .string("RGBA or RGB array (0-1 per channel)."),
+                        "items": .object(["type": .string("number")]),
+                    ]),
+                    "opacity": .object([
+                        "type": .string("number"),
+                        "description": .string("Sets color alpha (0-1). Leaves RGB unchanged."),
+                    ]),
+                    "roughness": .object(["type": .string("number")]),
+                    "metallic": .object(["type": .string("number")]),
+                    "name": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("bodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "compute_metrics",
+            description: "Compute volume / surface area / center of mass / bounding box / principal axes for a scene body. Direct OCCTSwift call, no occtkit subprocess.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "metrics": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("string")]),
+                        "description": .string("Subset to compute. Default: all. Items: volume, surfaceArea, centerOfMass, boundingBox, principalAxes."),
+                    ]),
+                ]),
+                "required": .array([.string("bodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "query_topology",
+            description: "Find faces / edges / vertices on a body matching criteria. Returns stable IDs (face[N], edge[N], vertex[N]).",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "entity": .object([
+                        "type": .string("string"),
+                        "enum": .array([.string("face"), .string("edge"), .string("vertex")]),
+                    ]),
+                    "filter": .object([
+                        "type": .string("object"),
+                        "description": .string("Optional: surfaceType, curveType, minArea, maxArea."),
+                    ]),
+                    "limit": .object(["type": .string("integer"), "minimum": .int(1)]),
+                ]),
+                "required": .array([.string("bodyId"), .string("entity")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "measure_distance",
+            description: "Minimum distance between two scene bodies. Pass computeContacts=true to also return up to 32 contact pairs.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "fromBodyId": .object(["type": .string("string")]),
+                    "toBodyId": .object(["type": .string("string")]),
+                    "computeContacts": .object(["type": .string("boolean")]),
+                ]),
+                "required": .array([.string("fromBodyId"), .string("toBodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "transform_body",
+            description: "Apply translate / rotate / uniform-scale to a scene body. Without outputBodyId, replaces in place; with outputBodyId, adds a new body.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "translate": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("number")]),
+                        "minItems": .int(3), "maxItems": .int(3),
+                    ]),
+                    "rotateAxisAngle": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("number")]),
+                        "minItems": .int(4), "maxItems": .int(4),
+                        "description": .string("[axisX, axisY, axisZ, radians]"),
+                    ]),
+                    "rotateEulerXyz": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("number")]),
+                        "minItems": .int(3), "maxItems": .int(3),
+                    ]),
+                    "scale": .object(["type": .string("number")]),
+                    "inPlace": .object(["type": .string("boolean")]),
+                    "outputBodyId": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("bodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "boolean_op",
+            description: "Boolean op (union / subtract / intersect / split) between two scene bodies. Output is added as a new body.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "op": .object([
+                        "type": .string("string"),
+                        "enum": .array([.string("union"), .string("subtract"), .string("intersect"), .string("split")]),
+                    ]),
+                    "aBodyId": .object(["type": .string("string")]),
+                    "bBodyId": .object(["type": .string("string")]),
+                    "outputBodyId": .object(["type": .string("string")]),
+                    "removeInputs": .object(["type": .string("boolean")]),
+                ]),
+                "required": .array([.string("op"), .string("aBodyId"), .string("bBodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "mirror_or_pattern",
+            description: "Mirror / linear / circular pattern of a body. Output is a single (possibly compound) body added to the scene.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "kind": .object([
+                        "type": .string("string"),
+                        "enum": .array([.string("mirror"), .string("linear"), .string("circular")]),
+                    ]),
+                    "params": .object([
+                        "type": .string("object"),
+                        "description": .string("Mirror: planeNormal (required), planeOrigin (optional). Linear: direction, spacing, count. Circular: axisOrigin, axisDirection, totalCount, totalAngle (optional)."),
+                    ]),
+                    "outputBodyId": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("bodyId"), .string("kind"), .string("params")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "generate_mesh",
+            description: "Tessellate a scene body into triangles + quality metrics. Optionally inline geometry or write to .stl/.obj.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "linearDeflection": .object(["type": .string("number")]),
+                    "angularDeflection": .object(["type": .string("number")]),
+                    "returnGeometry": .object(["type": .string("boolean")]),
+                    "outputPath": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("bodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "simplify_mesh",
+            description: "QEM mesh decimation via OCCTSwiftMesh (vendored meshoptimizer). Outputs .stl or .obj.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "outputPath": .object(["type": .string("string")]),
+                    "targetTriangleCount": .object(["type": .string("integer"), "minimum": .int(1)]),
+                    "targetReduction": .object(["type": .string("number")]),
+                    "preserveBoundary": .object(["type": .string("boolean")]),
+                    "preserveTopology": .object(["type": .string("boolean")]),
+                    "maxHausdorffDistance": .object(["type": .string("number")]),
+                    "linearDeflection": .object(["type": .string("number")]),
+                    "angularDeflection": .object(["type": .string("number")]),
+                ]),
+                "required": .array([.string("bodyId"), .string("outputPath")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "heal_shape",
+            description: "Heal imported / non-watertight geometry via OCCT ShapeFix. Returns before/after stats.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "bodyId": .object(["type": .string("string")]),
+                    "outputBodyId": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("bodyId")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "read_brep",
+            description: "Add a .brep from disk to the scene as a new body.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "inputPath": .object(["type": .string("string")]),
+                    "bodyId": .object(["type": .string("string")]),
+                    "color": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("number")]),
+                    ]),
+                ]),
+                "required": .array([.string("inputPath")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "import_file",
+            description: "Multi-format CAD import (STEP / IGES / BREP). Adds the imported shape as a single body.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "inputPath": .object(["type": .string("string")]),
+                    "format": .object([
+                        "type": .string("string"),
+                        "enum": .array([.string("auto"), .string("step"), .string("iges"), .string("obj"), .string("brep")]),
+                    ]),
+                    "idPrefix": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("inputPath")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "export_scene",
+            description: "Export the current scene (or a subset) to step / iges / brep / stl / obj / gltf / glb.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "format": .object([
+                        "type": .string("string"),
+                        "enum": .array([
+                            .string("step"), .string("iges"), .string("brep"),
+                            .string("stl"), .string("obj"), .string("gltf"), .string("glb"),
+                        ]),
+                    ]),
+                    "outputPath": .object(["type": .string("string")]),
+                    "bodyIds": .object([
+                        "type": .string("array"),
+                        "items": .object(["type": .string("string")]),
+                    ]),
+                ]),
+                "required": .array([.string("format"), .string("outputPath")]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+        Tool(
+            name: "compare_versions",
+            description: "Diff the current scene against a snapshot from N runs ago. Detects added / removed / appearance-changed / file-changed bodies.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "since": .object([
+                        "type": .string("integer"),
+                        "minimum": .int(1),
+                        "description": .string("How many runs back to compare against. Default 1."),
+                    ]),
+                ]),
+                "additionalProperties": .bool(false),
+            ])
+        ),
+    ]
+}
+
+struct ToolCatalog: Encodable {
+    let tools: [Tool]
+    let count: Int
+}
+
+func dispatch(callName: String, arguments: [String: Value]) async -> CallTool.Result {
+    switch callName {
+    case "ping":
+        return ToolText("pong").asCallToolResult()
+
+    case "apply_feature":
+        guard let bodyId = arguments["bodyId"]?.stringValue,
+              let feature = arguments["feature"] else {
+            return ToolText("apply_feature requires `bodyId` and `feature`.", isError: true).asCallToolResult()
+        }
+        return await FeatureTools.applyFeature(
+            bodyId: bodyId,
+            feature: feature,
+            outputBodyId: arguments["outputBodyId"]?.stringValue
+        ).asCallToolResult()
+
+    case "inspect_assembly":
+        return await AssemblyTools.inspectAssembly(
+            bodyId: arguments["bodyId"]?.stringValue,
+            inputPath: arguments["inputPath"]?.stringValue,
+            depth: arguments["depth"]?.intValue
+        ).asCallToolResult()
+
+    case "generate_drawing":
+        guard let bodyId = arguments["bodyId"]?.stringValue,
+              let outputPath = arguments["outputPath"]?.stringValue,
+              let spec = arguments["spec"] else {
+            return ToolText("generate_drawing requires `bodyId`, `outputPath`, `spec`.", isError: true).asCallToolResult()
+        }
+        return await DrawingTools.generateDrawing(
+            bodyId: bodyId, outputPath: outputPath, spec: spec
+        ).asCallToolResult()
+
+    case "get_api_reference":
+        let category = arguments["category"]?.stringValue ?? "mcp_tools"
+        if category == "mcp_tools" {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let payload = ToolCatalog(tools: catalogTools(), count: catalogTools().count)
+            if let data = try? encoder.encode(payload),
+               let str = String(data: data, encoding: .utf8) {
+                return ToolText(str).asCallToolResult()
+            }
+            return ToolText("Failed to encode tool catalog.", isError: true).asCallToolResult()
+        }
+        return ToolText(
+            "OCCTSwift API documentation lives at https://github.com/gsdali/OCCTSwift — browse the public func declarations there. " +
+                "Pass category=\"mcp_tools\" to get this server's live tool catalog as JSON."
+        ).asCallToolResult()
+
+    case "get_scene":
+        return await CoreTools.getScene().asCallToolResult()
+
+    case "get_script":
+        return await CoreTools.getScript().asCallToolResult()
+
+    case "export_model":
+        return await CoreTools.exportModel().asCallToolResult()
+
+    case "validate_geometry":
+        return await AnalysisTools.validateGeometry(
+            bodyId: arguments["bodyId"]?.stringValue
+        ).asCallToolResult()
+
+    case "recognize_features":
+        guard let bodyId = arguments["bodyId"]?.stringValue else {
+            return ToolText("recognize_features requires `bodyId`.", isError: true).asCallToolResult()
+        }
+        let kinds = arguments["kinds"]?.arrayValue?.compactMap { $0.stringValue }
+        return await AnalysisTools.recognizeFeatures(bodyId: bodyId, kinds: kinds).asCallToolResult()
+
+    case "analyze_clearance":
+        guard let ids = arguments["bodyIds"]?.arrayValue?.compactMap({ $0.stringValue }), !ids.isEmpty else {
+            return ToolText("analyze_clearance requires `bodyIds` array.", isError: true).asCallToolResult()
+        }
+        return await AnalysisTools.analyzeClearance(
+            bodyIds: ids,
+            computeContacts: arguments["computeContacts"]?.boolValue ?? true
+        ).asCallToolResult()
+
+    case "graph_validate":
+        guard let path = arguments["brep_path"]?.stringValue else {
+            return ToolText("graph_validate requires `brep_path`.", isError: true).asCallToolResult()
+        }
+        return await AnalysisTools.graphValidate(brepPath: path).asCallToolResult()
+
+    case "graph_compact":
+        guard let inP = arguments["brep_path"]?.stringValue,
+              let outP = arguments["output_path"]?.stringValue else {
+            return ToolText("graph_compact requires `brep_path` and `output_path`.", isError: true).asCallToolResult()
+        }
+        return await AnalysisTools.graphCompact(brepPath: inP, outputPath: outP).asCallToolResult()
+
+    case "graph_dedup":
+        guard let inP = arguments["brep_path"]?.stringValue,
+              let outP = arguments["output_path"]?.stringValue else {
+            return ToolText("graph_dedup requires `brep_path` and `output_path`.", isError: true).asCallToolResult()
+        }
+        return await AnalysisTools.graphDedup(brepPath: inP, outputPath: outP).asCallToolResult()
+
+    case "feature_recognize":
+        guard let path = arguments["brep_path"]?.stringValue else {
+            return ToolText("feature_recognize requires `brep_path`.", isError: true).asCallToolResult()
+        }
+        return await AnalysisTools.featureRecognize(brepPath: path).asCallToolResult()
+
+    case "remove_body":
+        guard let bodyId = arguments["bodyId"]?.stringValue else {
+            return ToolText("remove_body requires `bodyId`.", isError: true).asCallToolResult()
+        }
+        return await SceneTools.removeBody(bodyId: bodyId).asCallToolResult()
+
+    case "clear_scene":
+        let keepHistory = arguments["keepHistory"]?.boolValue ?? false
+        return await SceneTools.clearScene(keepHistory: keepHistory).asCallToolResult()
+
+    case "rename_body":
+        guard let bodyId = arguments["bodyId"]?.stringValue,
+              let newBodyId = arguments["newBodyId"]?.stringValue else {
+            return ToolText("rename_body requires `bodyId` and `newBodyId`.", isError: true).asCallToolResult()
+        }
+        return await SceneTools.renameBody(bodyId: bodyId, newBodyId: newBodyId).asCallToolResult()
+
+    case "set_appearance":
+        guard let bodyId = arguments["bodyId"]?.stringValue else {
+            return ToolText("set_appearance requires `bodyId`.", isError: true).asCallToolResult()
+        }
+        let update = SceneTools.AppearanceUpdate(
+            color: arguments["color"]?.arrayValue?.compactMap { $0.doubleValue.flatMap { Float($0) } },
+            opacity: arguments["opacity"]?.doubleValue.flatMap { Float($0) },
+            roughness: arguments["roughness"]?.doubleValue.flatMap { Float($0) },
+            metallic: arguments["metallic"]?.doubleValue.flatMap { Float($0) },
+            name: arguments["name"]?.stringValue
+        )
+        return await SceneTools.setAppearance(bodyId: bodyId, update: update).asCallToolResult()
+
+    case "compute_metrics":
+        guard let bodyId = arguments["bodyId"]?.stringValue else {
+            return ToolText("compute_metrics requires `bodyId`.", isError: true).asCallToolResult()
+        }
+        let metricsArr = arguments["metrics"]?.arrayValue?.compactMap { $0.stringValue }
+        let metrics: Set<String>? = metricsArr.flatMap { $0.isEmpty ? nil : Set($0) }
+        return await IntrospectionTools.computeMetrics(bodyId: bodyId, metrics: metrics).asCallToolResult()
+
+    case "query_topology":
+        guard let bodyId = arguments["bodyId"]?.stringValue,
+              let entity = arguments["entity"]?.stringValue else {
+            return ToolText("query_topology requires `bodyId` and `entity`.", isError: true).asCallToolResult()
+        }
+        var filter = IntrospectionTools.TopologyFilter()
+        if case .object(let f)? = arguments["filter"] {
+            filter.surfaceType = f["surfaceType"]?.stringValue
+            filter.curveType = f["curveType"]?.stringValue
+            filter.minArea = f["minArea"]?.doubleValue
+            filter.maxArea = f["maxArea"]?.doubleValue
+        }
+        let limit = arguments["limit"]?.intValue
+        return await IntrospectionTools.queryTopology(
+            bodyId: bodyId, entity: entity, filter: filter, limit: limit
+        ).asCallToolResult()
+
+    case "measure_distance":
+        guard let fromId = arguments["fromBodyId"]?.stringValue,
+              let toId = arguments["toBodyId"]?.stringValue else {
+            return ToolText("measure_distance requires `fromBodyId` and `toBodyId`.", isError: true).asCallToolResult()
+        }
+        let computeContacts = arguments["computeContacts"]?.boolValue ?? false
+        return await IntrospectionTools.measureDistance(
+            fromBodyId: fromId, toBodyId: toId, computeContacts: computeContacts
+        ).asCallToolResult()
+
+    case "transform_body":
+        guard let bodyId = arguments["bodyId"]?.stringValue else {
+            return ToolText("transform_body requires `bodyId`.", isError: true).asCallToolResult()
+        }
+        var opts = ConstructionTools.TransformOptions()
+        if let arr = arguments["translate"]?.arrayValue, arr.count == 3,
+           let x = arr[0].doubleValue, let y = arr[1].doubleValue, let z = arr[2].doubleValue {
+            opts.translate = SIMD3(x, y, z)
+        }
+        if let arr = arguments["rotateAxisAngle"]?.arrayValue, arr.count == 4,
+           let x = arr[0].doubleValue, let y = arr[1].doubleValue, let z = arr[2].doubleValue,
+           let r = arr[3].doubleValue {
+            opts.rotateAxisAngle = (SIMD3(x, y, z), r)
+        }
+        if let arr = arguments["rotateEulerXyz"]?.arrayValue, arr.count == 3,
+           let x = arr[0].doubleValue, let y = arr[1].doubleValue, let z = arr[2].doubleValue {
+            opts.rotateEulerXyz = SIMD3(x, y, z)
+        }
+        opts.scale = arguments["scale"]?.doubleValue
+        opts.inPlace = arguments["inPlace"]?.boolValue
+        opts.outputBodyId = arguments["outputBodyId"]?.stringValue
+        return await ConstructionTools.transformBody(bodyId: bodyId, options: opts).asCallToolResult()
+
+    case "boolean_op":
+        guard let opStr = arguments["op"]?.stringValue,
+              let op = ConstructionTools.BooleanOp(rawValue: opStr),
+              let a = arguments["aBodyId"]?.stringValue,
+              let b = arguments["bBodyId"]?.stringValue else {
+            return ToolText("boolean_op requires `op`, `aBodyId`, `bBodyId`.", isError: true).asCallToolResult()
+        }
+        return await ConstructionTools.booleanOp(
+            op: op,
+            aBodyId: a, bBodyId: b,
+            outputBodyId: arguments["outputBodyId"]?.stringValue,
+            removeInputs: arguments["removeInputs"]?.boolValue ?? false
+        ).asCallToolResult()
+
+    case "mirror_or_pattern":
+        guard let bodyId = arguments["bodyId"]?.stringValue,
+              let kindStr = arguments["kind"]?.stringValue,
+              let kind = ConstructionTools.PatternKind(rawValue: kindStr) else {
+            return ToolText("mirror_or_pattern requires `bodyId` and `kind`.", isError: true).asCallToolResult()
+        }
+        var p = ConstructionTools.PatternParams()
+        if case .object(let f)? = arguments["params"] {
+            if let arr = f["planeOrigin"]?.arrayValue, arr.count == 3,
+               let x = arr[0].doubleValue, let y = arr[1].doubleValue, let z = arr[2].doubleValue {
+                p.planeOrigin = SIMD3(x, y, z)
+            }
+            if let arr = f["planeNormal"]?.arrayValue, arr.count == 3,
+               let x = arr[0].doubleValue, let y = arr[1].doubleValue, let z = arr[2].doubleValue {
+                p.planeNormal = SIMD3(x, y, z)
+            }
+            if let arr = f["direction"]?.arrayValue, arr.count == 3,
+               let x = arr[0].doubleValue, let y = arr[1].doubleValue, let z = arr[2].doubleValue {
+                p.direction = SIMD3(x, y, z)
+            }
+            p.spacing = f["spacing"]?.doubleValue
+            p.count = f["count"]?.intValue
+            if let arr = f["axisOrigin"]?.arrayValue, arr.count == 3,
+               let x = arr[0].doubleValue, let y = arr[1].doubleValue, let z = arr[2].doubleValue {
+                p.axisOrigin = SIMD3(x, y, z)
+            }
+            if let arr = f["axisDirection"]?.arrayValue, arr.count == 3,
+               let x = arr[0].doubleValue, let y = arr[1].doubleValue, let z = arr[2].doubleValue {
+                p.axisDirection = SIMD3(x, y, z)
+            }
+            p.totalCount = f["totalCount"]?.intValue
+            p.totalAngle = f["totalAngle"]?.doubleValue
+        }
+        return await ConstructionTools.mirrorOrPattern(
+            bodyId: bodyId, kind: kind, params: p,
+            outputBodyId: arguments["outputBodyId"]?.stringValue
+        ).asCallToolResult()
+
+    case "generate_mesh":
+        guard let bodyId = arguments["bodyId"]?.stringValue else {
+            return ToolText("generate_mesh requires `bodyId`.", isError: true).asCallToolResult()
+        }
+        return await MeshTools.generateMesh(
+            bodyId: bodyId,
+            linearDeflection: arguments["linearDeflection"]?.doubleValue ?? 0.1,
+            angularDeflection: arguments["angularDeflection"]?.doubleValue ?? 0.5,
+            returnGeometry: arguments["returnGeometry"]?.boolValue ?? false,
+            outputPath: arguments["outputPath"]?.stringValue
+        ).asCallToolResult()
+
+    case "simplify_mesh":
+        guard let bodyId = arguments["bodyId"]?.stringValue,
+              let outputPath = arguments["outputPath"]?.stringValue else {
+            return ToolText("simplify_mesh requires `bodyId` and `outputPath`.", isError: true).asCallToolResult()
+        }
+        return await MeshTools.simplifyMesh(
+            bodyId: bodyId, outputPath: outputPath,
+            targetTriangleCount: arguments["targetTriangleCount"]?.intValue,
+            targetReduction: arguments["targetReduction"]?.doubleValue,
+            preserveBoundary: arguments["preserveBoundary"]?.boolValue ?? true,
+            preserveTopology: arguments["preserveTopology"]?.boolValue ?? true,
+            maxHausdorffDistance: arguments["maxHausdorffDistance"]?.doubleValue,
+            linearDeflection: arguments["linearDeflection"]?.doubleValue ?? 0.1,
+            angularDeflection: arguments["angularDeflection"]?.doubleValue ?? 0.5
+        ).asCallToolResult()
+
+    case "heal_shape":
+        guard let bodyId = arguments["bodyId"]?.stringValue else {
+            return ToolText("heal_shape requires `bodyId`.", isError: true).asCallToolResult()
+        }
+        return await HealingTools.healShape(
+            bodyId: bodyId,
+            outputBodyId: arguments["outputBodyId"]?.stringValue
+        ).asCallToolResult()
+
+    case "read_brep":
+        guard let inputPath = arguments["inputPath"]?.stringValue else {
+            return ToolText("read_brep requires `inputPath`.", isError: true).asCallToolResult()
+        }
+        let color = arguments["color"]?.arrayValue?.compactMap { $0.doubleValue.flatMap { Float($0) } }
+        return await IOTools.readBrep(
+            inputPath: inputPath,
+            bodyId: arguments["bodyId"]?.stringValue,
+            color: color
+        ).asCallToolResult()
+
+    case "import_file":
+        guard let inputPath = arguments["inputPath"]?.stringValue else {
+            return ToolText("import_file requires `inputPath`.", isError: true).asCallToolResult()
+        }
+        let format = (arguments["format"]?.stringValue).flatMap(IOTools.ImportFormat.init(rawValue:)) ?? .auto
+        return await IOTools.importFile(
+            inputPath: inputPath,
+            format: format,
+            idPrefix: arguments["idPrefix"]?.stringValue ?? "imported"
+        ).asCallToolResult()
+
+    case "export_scene":
+        guard let formatStr = arguments["format"]?.stringValue,
+              let format = IOTools.ExportFormat(rawValue: formatStr),
+              let outputPath = arguments["outputPath"]?.stringValue else {
+            return ToolText("export_scene requires `format` and `outputPath`.", isError: true).asCallToolResult()
+        }
+        let ids = arguments["bodyIds"]?.arrayValue?.compactMap { $0.stringValue }
+        return await IOTools.exportScene(format: format, outputPath: outputPath, bodyIds: ids).asCallToolResult()
+
+    case "compare_versions":
+        let since = arguments["since"]?.intValue ?? 1
+        return await SceneTools.compareVersions(since: since).asCallToolResult()
+
+    default:
+        return ToolText("Unknown tool: \(callName)", isError: true).asCallToolResult()
+    }
+}

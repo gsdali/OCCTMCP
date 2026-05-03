@@ -108,6 +108,15 @@ The LLM has full access to OCCTSwift's 900+ CAD operations: primitives, booleans
 
 ## Setup
 
+Two implementations live in this repo, side-by-side:
+
+- **Node / TypeScript** (`src/`, `dist/`) — the production server. Shells out to the `occtkit` CLI for everything Swift-side. 36 tools, including `execute_script`.
+- **Swift** (`Sources/`, `Package.swift`) — an in-process port using the [official Swift MCP SDK](https://swiftpackageindex.com/modelcontextprotocol/swift-sdk). Currently 32 of 36 tools, all running directly against OCCTSwift / OCCTSwiftMesh / DrawingComposer with no subprocess. `execute_script`, `set_assembly_metadata`, `render_preview`, `check_thickness`, and `graph_ml` are still pending.
+
+Pick whichever fits your platform: Node runs anywhere; the Swift binary is macOS-only (since OCCT.xcframework targets arm64 macOS 12+ / iOS 15+) but eliminates the cold-start of the SwiftPM workspace and the JSONL marshalling overhead.
+
+### Node implementation
+
 ```bash
 git clone https://github.com/gsdali/OCCTMCP.git
 cd OCCTMCP
@@ -115,9 +124,7 @@ npm install
 npm run build
 ```
 
-### Add to Claude Code
-
-Create or edit `.mcp.json` in your project:
+In Claude Code's `.mcp.json`:
 
 ```json
 {
@@ -129,6 +136,26 @@ Create or edit `.mcp.json` in your project:
   }
 }
 ```
+
+### Swift implementation
+
+```bash
+swift build -c release
+```
+
+In `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "occtmcp": {
+      "command": "/path/to/OCCTMCP/.build/release/occtmcp-server"
+    }
+  }
+}
+```
+
+The Swift package is intended for [Swift Package Index](https://swiftpackageindex.com) publication once `execute_script` lands and the integration test suite is in place. Track progress in [PR #11](https://github.com/gsdali/OCCTMCP/pull/11) and the follow-up Phase 5.4 work.
 
 ## Example
 
